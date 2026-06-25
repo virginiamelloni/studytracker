@@ -2,7 +2,7 @@
   "name": "Study Tracker // Concursos",
   "short_name": "StudyTracker",
   "description": "Tracker de estudos para concursos ANPD, CGU e TCU",
-  "start_url": "./StudyTracker_v3.html",
+  "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait-primary",
