@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>STUDY TRACKER v2 // CONCURSOS FEDERAIS</title>
+<title>Study Tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -48,6 +48,10 @@ select{appearance:none;cursor:pointer}
 }
 </style>
   <!-- PWA -->
+  <meta property="og:title" content="Study Tracker">
+  <meta property="og:description" content="Tracker de estudos para concursos e provas. Gamificado, com revisão espaçada e análise de gaps.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="icon-512.png">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#FF0044">
   <meta name="mobile-web-app-capable" content="yes">
@@ -77,13 +81,27 @@ const DISCS = [
   {name:'Língua Portuguesa',           short:'PORT',    color:'#FFB400', sub:'GRAMÁTICA | TEXTO'},
   {name:'Raciocínio Lógico',           short:'R.LOG',   color:'#39FF7A', sub:'PROPOSIC | ARRANJO'}
 ];
+function getDiscs(){
+  const base = DISCS.map(d=>({...d}));
+  if(S.customDiscs&&S.customDiscs.length>0){
+    S.customDiscs.forEach(c=>{
+      if(c.name&&!base.find(b=>b.name===c.name)){
+        base.push({name:c.name,short:c.short||c.name.slice(0,8).toUpperCase(),color:c.color||'#B864E8',sub:c.sub||''});
+      }
+    });
+  }
+  return base;
+}
+
 const BLOCK_META = {
-  'Bloco A': {sub:'Teoria — 2h',      hint:'Conteúdo novo, leitura de lei, aulas'},
-  'Bloco B': {sub:'Questões — 1,5h', hint:'Resolução e revisão de questões Cebraspe'},
-  'Extra':   {sub:'Opcional — 1h',    hint:'Aprofundamento, mapa mental, resumo'},
-  'Simulado':{sub:'Prova completa',   hint:'Simulado cronometrado com todas as disciplinas'}
+  'Bloco A':  {sub:'Teoria — 2h',         hint:'Conteúdo novo, leitura de lei, aulas'},
+  'Bloco B':  {sub:'Teoria — 1h',         hint:'Conteúdo novo, leitura de lei, aulas (bloco curto)'},
+  'Bloco C':  {sub:'Questões — 1h',       hint:'Resolução e revisão de questões Cebraspe'},
+  'Extra':    {sub:'Opcional',             hint:'Aprofundamento, mapa mental, resumo (tempo livre)'},
+  'Revisão':  {sub:'Revisão espaçada',     hint:'Revisão D+1, D+7 ou D+30 após aprendizado inicial'},
+  'Simulado': {sub:'Prova completa',       hint:'Simulado cronometrado com todas as disciplinas'}
 };
-const BLOCKS = ['Bloco A','Bloco B','Extra','Simulado'];
+const BLOCKS = ['Bloco A','Bloco B','Bloco C','Extra','Revisão','Simulado'];
 const ERR_TYPES = ['Interpretação de enunciado','Gap de conteúdo — não sabia o assunto','Gap de linguagem concursal — sabia mas a formulação confundiu','Erro de atenção / leitura','Desconhecimento de jurisprudência / súmula','Confusão entre institutos similares'];
 const MONTHS = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
 const WEEK_DAYS = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
@@ -109,6 +127,9 @@ let S = {
   flashMsg: '',
   editId: null,
   examDate:'',
+  examName:'',
+  customDiscs:[],
+  setupDone:false,
   sbUrl:localStorage.getItem('st-sb-url')||'',
   sbKey:localStorage.getItem('st-sb-key')||'',
   sbStatus:'init',sbError:'',loading:false,
@@ -126,7 +147,7 @@ function fmtLong(iso){if(!iso)return'—';const[y,m,d]=iso.split('-');return d+'
 function todayStamp(){const n=new Date();return n.getDate().toString().padStart(2,'0')+' '+MONTHS[n.getMonth()]+' '+n.getFullYear()}
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
-function discMeta(name){return DISCS.find(d=>d.name===name)||{color:'#B080A0',short:'?',sub:''}}
+function discMeta(name){return getDiscs().find(d=>d.name===name)||{color:'#B080A0',short:'?',sub:''}}
 function statusFor(acc,hasData){
   if(!hasData)return{color:'#9377A4',label:'NÃO INICIADO'};
   if(acc>0.70)return{color:'#39FF7A',label:'CONSOLIDADA'};
@@ -196,7 +217,7 @@ function seedSessions(){
 
 // ─── STORAGE ──────────────────────────────────────────────────────────────────
 function saveLocal(){
-  try{localStorage.setItem(KEY,JSON.stringify({sessions:S.sessions,examDate:S.examDate,userName:S.userName}))}catch(_){}
+  try{localStorage.setItem(KEY,JSON.stringify({sessions:S.sessions,examDate:S.examDate,userName:S.userName,examName:S.examName,customDiscs:S.customDiscs,setupDone:S.setupDone}))}catch(_){}
 }
 function load(){
   // Carrega dados locais primeiro (fallback imediato)
@@ -208,6 +229,9 @@ function load(){
         S.sessions=p.sessions.map(s=>({...s,errorType:(s.questions>0?s.errorType:'')}));
       }
       if(p.examDate)S.examDate=p.examDate;
+      if(p.examName)S.examName=p.examName;
+      if(Array.isArray(p.customDiscs)&&p.customDiscs.length>0)S.customDiscs=p.customDiscs;
+      if(p.setupDone)S.setupDone=true;
       if(p.userName)S.userName=p.userName;
     }}
   }catch(_){}
@@ -342,7 +366,7 @@ function computed(){
   const spaced=(byDate[srDate]||[]).filter(x=>x.correct<x.questions).map(x=>({...x,dc:discMeta(x.discipline).color,errRate:x.questions>0?Math.round(((x.questions-x.correct)/x.questions)*100):0}));
 
   // Skill map
-  const skillMap=DISCS.map(d=>{
+  const skillMap=getDiscs().map(d=>{
     const ds=sessions.filter(x=>x.discipline===d.name);
     const tq=ds.reduce((a,x)=>a+x.questions,0);
     const tc=ds.reduce((a,x)=>a+x.correct,0);
@@ -388,7 +412,7 @@ function computed(){
     }
   }
 
-  const discBars=DISCS.map(b=>{
+  const discBars=getDiscs().map(b=>{
     const ds=evSessions.filter(x=>x.discipline===b.name);
     const tq=ds.reduce((a,x)=>a+x.questions,0);
     const tc=ds.reduce((a,x)=>a+x.correct,0);
@@ -428,7 +452,52 @@ function computed(){
   else if(!hasDisc)saveHint='Selecione uma disciplina';
   else if(!hasHours)saveHint='Informe as horas estudadas';
 
-  return{streak,studyDays,totalHours,xp,level,xpInLevel,heatmap,avgH,spaced,srDate,skillMap,hist,discBars,daily14,errBars,maxErr,fpct,fpctSt,fcOverflow,canSave,saveHint,fh,fq:isNaN(fq)?'':fq,fc:isNaN(fc)?'':fc,weekHours,weekDaysStudied,weekDaysDots,evRangeLabel};
+
+  // ─── TENDÊNCIA: acerto últimos 14d vs 14d anteriores ──────────────────────
+  const trend = getDiscs().map(d => {
+    const ds = sessions.filter(x => x.discipline === d.name && x.questions > 0);
+    const recent = ds.filter(s => s.date >= daysAgoISO(13));
+    const older  = ds.filter(s => s.date >= daysAgoISO(27) && s.date < daysAgoISO(13));
+    const rAcc = recent.length > 0 ? recent.reduce((a,x) => a+x.correct, 0) / recent.reduce((a,x) => a+x.questions, 0) : null;
+    const oAcc = older.length > 0 ? older.reduce((a,x) => a+x.correct, 0) / older.reduce((a,x) => a+x.questions, 0) : null;
+    let dir = 'flat', delta = 0;
+    if (rAcc !== null && oAcc !== null) {
+      delta = Math.round((rAcc - oAcc) * 100);
+      dir = delta > 3 ? 'up' : delta < -3 ? 'down' : 'flat';
+    } else if (rAcc !== null && oAcc === null) {
+      dir = 'new';
+    }
+    return { name: d.name, short: d.short || d.name.slice(0,8), color: d.color, rAcc, oAcc, delta, dir, rQ: recent.reduce((a,x) => a+x.questions, 0), oQ: older.reduce((a,x) => a+x.questions, 0) };
+  });
+
+  // ─── PREVISÃO DE HORAS ATÉ O EDITAL ──────────────────────────────────────
+  const dExam = daysToExam();
+  const activeDays14 = Array.from({length:14}, (_,i) => daysAgoISO(13-i)).filter(d => byDate[d]);
+  const avgDailyH = activeDays14.length > 0 ? activeDays14.reduce((a,d) => a + (byDate[d]||[]).reduce((b,x) => b+x.hours, 0), 0) / 14 : 0;
+  const projectedH = dExam !== null ? +(avgDailyH * dExam).toFixed(0) : null;
+  const totalQAll = sessions.reduce((a,x) => a+x.questions, 0);
+  const avgQperH = totalHours > 0 ? +(totalQAll / totalHours).toFixed(1) : 0;
+  const projectedQ = projectedH !== null && avgQperH > 0 ? Math.round(projectedH * avgQperH) : null;
+  const forecast = { dExam, avgDailyH: +avgDailyH.toFixed(2), projectedH, projectedQ, totalQAll, avgQperH };
+
+  // ─── RANKING POR PRIORIDADE (menor acerto primeiro) ───────────────────────
+  const priority = getDiscs().map(d => {
+    const ds = sessions.filter(x => x.discipline === d.name);
+    const tq = ds.reduce((a,x) => a+x.questions, 0);
+    const tc = ds.reduce((a,x) => a+x.correct, 0);
+    const acc = tq > 0 ? tc/tq : -1;
+    const st = statusFor(acc, tq > 0);
+    const th = ds.reduce((a,x) => a+x.hours, 0);
+    return { name: d.name, short: d.short || d.name.slice(0,8), color: d.color, acc, accLabel: tq > 0 ? Math.round(acc*100)+'%' : '—', st, tq, th: +th.toFixed(1) };
+  }).sort((a,b) => {
+    // Não iniciado vai pro topo, depois menor acerto
+    if (a.acc < 0 && b.acc >= 0) return -1;
+    if (b.acc < 0 && a.acc >= 0) return 1;
+    if (a.acc < 0 && b.acc < 0) return 0;
+    return a.acc - b.acc;
+  });
+
+  return{streak,studyDays,totalHours,xp,level,xpInLevel,heatmap,avgH,spaced,srDate,skillMap,hist,discBars,daily14,errBars,maxErr,fpct,fpctSt,fcOverflow,canSave,saveHint,fh,fq:isNaN(fq)?'':fq,fc:isNaN(fc)?'':fc,weekHours,weekDaysStudied,weekDaysDots,evRangeLabel,trend,forecast,priority};
 }
 
 // ─── VISUAL HELPERS ───────────────────────────────────────────────────────────
@@ -453,7 +522,7 @@ function buildHeader(){
     </div>
     <div>
       <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:18px;letter-spacing:.18em;text-transform:uppercase;color:#FFE6EE;text-shadow:0 0 12px rgba(255,0,68,.4)">Study Tracker <span style="font-size:11px;color:#8B6F95;letter-spacing:.1em">v2</span></div>
-      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B080A0;letter-spacing:.25em;text-transform:uppercase;margin-top:2px">// concursos.anpd.cgu.tcu</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B080A0;letter-spacing:.25em;text-transform:uppercase;margin-top:2px">// ${S.examName||'study tracker'}</div>
     </div>
   </div>
   <nav style="display:flex;gap:6px;padding:5px;border:1px solid rgba(255,0,68,.18);background:rgba(15,6,23,.65)">
@@ -639,7 +708,7 @@ function buildSession(c){
     </div>`;
   }).join('');
 
-  let discChips=DISCS.map(d=>{
+  let discChips=getDiscs().map(d=>{
     const active=f.discipline===d.name;
     return`<button class="chip-btn" onclick="setForm('discipline','${e(d.name)}')" style="padding:10px 8px;background:${active?'rgba(255,0,68,.12)':'rgba(6,0,15,.4)'};border:1px solid ${active?d.color:'rgba(255,255,255,.05)'};color:${active?'#FFE6EE':'#A98FB8'};font-family:'Space Grotesk',sans-serif;font-weight:500;font-size:11px;letter-spacing:.03em;cursor:pointer;text-align:left;display:flex;align-items:center;gap:8px;${active?`box-shadow:0 0 10px ${d.color}55`:''}"><span style="width:6px;height:6px;flex-shrink:0;background:${d.color};box-shadow:0 0 5px ${d.color}"></span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(d.name)}</span></button>`;
   }).join('');
@@ -665,7 +734,7 @@ function buildSession(c){
         </div>
         <div>
           ${lbl('Bloco')}
-          <div style="display:flex;gap:4px">${blockChips}</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px">${blockChips}</div>
         </div>
         <div style="grid-column:1/-1">
           ${lbl('Disciplina',true)}
@@ -750,7 +819,7 @@ function buildSession(c){
 }
 
 function buildHistory(c){
-  const filterOpts=[{name:'ALL',short:'TODAS'},...DISCS.map(d=>({name:d.name,short:d.short,color:d.color}))];
+  const filterOpts=[{name:'ALL',short:'TODAS'},...getDiscs().map(d=>({name:d.name,short:d.short,color:d.color}))];
   let chips=filterOpts.map(f=>{
     const active=S.filter===f.name;
     return`<button onclick="setFilter('${e(f.name)}')" style="padding:5px 10px;background:${active?'rgba(255,0,68,.18)':'transparent'};border:1px solid ${active?'#FF0044':'transparent'};color:${active?'#FFE6EE':'#B080A0'};font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;${active?'box-shadow:0 0 8px rgba(255,0,68,.35)':''}">${f.short}</button>`;
@@ -848,7 +917,7 @@ function buildEvolucao(c){
       ${[['#39FF7A','>70% Consolidada'],['#FFB400','40-70% Atenção'],['#FF0044','<40% Gap Crítico']].map(([c,l])=>`<span style="font-size:9px;color:${c};font-family:'JetBrains Mono',monospace">◉ ${l}</span>`).join('')}
     </div>
   </div>
-  <div class="grid-2col" style="display:grid;grid-template-columns:1.3fr 1fr;gap:16px">
+  <div class="grid-2col" style="display:grid;grid-template-columns:1.3fr 1fr;gap:16px;margin-bottom:16px">
     <div style="${card()}">
       <div style="margin-bottom:20px">${sectionTag('// last 14 days')}<h2 style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:16px;color:#FFE6EE">Horas diárias <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B080A0">meta: ${DAILY_TARGET_H}h/dia = verde</span></h2></div>
       ${dailyBars}
@@ -858,8 +927,202 @@ function buildEvolucao(c){
       ${errHtml}
     </div>
   </div>
+  <div style="${card('margin-bottom:16px')}">
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:20px">
+      <div>${sectionTag('// trend analysis')}<h2 style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:16px;color:#FFE6EE">Tendência por Disciplina</h2></div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B080A0;letter-spacing:.12em">ÚLTIMOS 14D vs 14D ANTERIORES</div>
+    </div>
+    ${c.trend.length===0?`<div style="padding:20px;text-align:center;color:#8B6F95;font-style:italic">Sem dados suficientes</div>`:
+    `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">
+      ${c.trend.map(t=>{
+        const arrow = t.dir==='up'?'▲':t.dir==='down'?'▼':t.dir==='new'?'★':'→';
+        const arrowColor = t.dir==='up'?'#39FF7A':t.dir==='down'?'#FF0044':t.dir==='new'?'#FFB400':'#8B6F95';
+        const deltaStr = t.delta>0?'+'+t.delta+'%':t.delta<0?t.delta+'%':t.dir==='new'?'novo':'estável';
+        const rPct = t.rAcc!==null?Math.round(t.rAcc*100)+'%':'—';
+        return `<div style="border:1px solid rgba(255,0,68,.12);background:rgba(6,0,15,.4);padding:14px;display:flex;align-items:center;gap:12px">
+          <div style="width:4px;height:36px;background:${t.color};box-shadow:0 0 6px ${t.color}88;flex-shrink:0"></div>
+          <div style="flex:1;min-width:0">
+            <div style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:12px;color:#FFE6EE;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(t.name)}</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8B6F95;margin-top:2px">${t.rQ}q recentes — ${t.oQ}q antes</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px;color:${arrowColor};text-shadow:0 0 8px ${arrowColor}aa">${arrow} ${deltaStr}</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B080A0">${rPct} atual</div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`}
+  </div>
+  <div class="grid-2col" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div style="${card()}">
+      <div style="margin-bottom:18px">${sectionTag('// forecast')}<h2 style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:16px;color:#FFE6EE">Projeção até o Edital</h2></div>
+      ${c.forecast.dExam===null?
+        `<div style="padding:24px;text-align:center;border:1px dashed rgba(255,0,68,.2)">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#B080A0;letter-spacing:.1em">// configure a data do edital no header</div>
+          <div style="font-size:12px;color:#8B6F95;margin-top:8px">A projeção precisa de uma data-alvo para calcular.</div>
+        </div>`:
+        `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+          <div style="background:rgba(255,0,68,.06);border:1px solid rgba(255,0,68,.18);padding:14px;text-align:center">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B080A0;letter-spacing:.18em;margin-bottom:6px">DIAS RESTANTES</div>
+            <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:28px;color:#FF0044;text-shadow:0 0 14px rgba(255,0,68,.6)">${c.forecast.dExam}</div>
+          </div>
+          <div style="background:rgba(57,255,122,.04);border:1px solid rgba(57,255,122,.18);padding:14px;text-align:center">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B080A0;letter-spacing:.18em;margin-bottom:6px">MÉDIA DIÁRIA</div>
+            <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:28px;color:#39FF7A;text-shadow:0 0 14px rgba(57,255,122,.5)">${c.forecast.avgDailyH}h</div>
+          </div>
+        </div>
+        <div style="border:1px solid rgba(255,0,68,.12);background:rgba(6,0,15,.4);padding:16px">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#FF0044;letter-spacing:.18em;margin-bottom:12px;text-shadow:0 0 4px #FF0044">PROJEÇÃO NO RITMO ATUAL</div>
+          <div style="display:flex;gap:20px;flex-wrap:wrap">
+            <div>
+              <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px;color:#FFE6EE">${c.forecast.projectedH!==null?c.forecast.projectedH+'h':'—'}</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8B6F95;margin-top:2px">horas totais projetadas</div>
+            </div>
+            <div>
+              <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px;color:#FFE6EE">${c.forecast.projectedQ!==null?c.forecast.projectedQ+'q':'—'}</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8B6F95;margin-top:2px">questões projetadas (${c.forecast.avgQperH}q/h)</div>
+            </div>
+          </div>
+          <div style="margin-top:14px;padding-top:12px;border-top:1px dashed rgba(255,0,68,.15);font-size:11px;color:#B080A0;line-height:1.6">
+            ${c.forecast.avgDailyH<DAILY_TARGET_H?
+              `<span style="color:#FFB400">⚠</span> Sua média diária (${c.forecast.avgDailyH}h) está abaixo da meta de ${DAILY_TARGET_H}h. Com a meta atingida, seriam <span style="color:#FFE6EE;font-weight:600">${Math.round(DAILY_TARGET_H*c.forecast.dExam)}h</span> até o edital.`:
+              `<span style="color:#39FF7A">✓</span> Sua média diária está na meta ou acima. Continue no ritmo.`
+            }
+          </div>
+        </div>`
+      }
+    </div>
+    <div style="${card()}">
+      <div style="margin-bottom:18px">${sectionTag('// priority ranking')}<h2 style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:16px;color:#FFE6EE">Ranking de Prioridade</h2></div>
+      <div style="font-size:11px;color:#8B6F95;margin-bottom:14px">Disciplinas com menor acerto primeiro — onde investir mais tempo.</div>
+      ${c.priority.length===0?`<div style="color:#8B6F95;font-style:italic;padding:16px;text-align:center">Sem dados</div>`:
+      c.priority.map((p,i)=>{
+        const rank = i+1;
+        const isTop3 = rank<=3;
+        const rankColor = rank===1?'#FF0044':rank===2?'#FF5577':rank===3?'#FFB400':'#8B6F95';
+        return `<div style="display:flex;align-items:center;gap:12px;padding:12px 0;${i<c.priority.length-1?'border-bottom:1px solid rgba(255,0,68,.08)':''}">
+          <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:1px solid ${rankColor};font-family:'JetBrains Mono',monospace;font-weight:700;font-size:12px;color:${rankColor};flex-shrink:0;${isTop3?'box-shadow:0 0 8px '+rankColor+'44':''}">${rank}</div>
+          <div style="width:4px;height:22px;background:${p.color};box-shadow:0 0 5px ${p.color}88;flex-shrink:0"></div>
+          <div style="flex:1;min-width:0">
+            <div style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:12px;color:#FFE6EE;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(p.name)}</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8B6F95;margin-top:2px">${p.tq}q resolvidas — ${p.th}h estudadas</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:14px;color:${p.st.color};text-shadow:0 0 6px ${p.st.color}aa">${p.accLabel}</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:${p.st.color};letter-spacing:.12em">${p.st.label}</div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>
 </div>`;
 }
+
+function buildOnboarding(){
+  const presets = [
+    {name:'ANPD — Especialista em Regulação',discs:['Direito Constitucional','Direito Administrativo','LGPD','Direito Digital / Marco Civil','Segurança da Informação','Governança de IA','Língua Portuguesa','Raciocínio Lógico']},
+    {name:'CGU — Auditor Federal (AFFC)',discs:['Direito Constitucional','Direito Administrativo','Auditoria Governamental','Contabilidade Pública','Administração Financeira e Orçamentária','Controle Interno e Externo','Língua Portuguesa','Raciocínio Lógico']},
+    {name:'TCU — Auditor de Controle Externo',discs:['Direito Constitucional','Direito Administrativo','Controle Externo','Auditoria Governamental','Administração Financeira e Orçamentária','Contabilidade Pública','Governança e Gestão Pública','Língua Portuguesa','Raciocínio Lógico']},
+    {name:'OAB — Exame de Ordem',discs:['Direito Constitucional','Direito Administrativo','Direito Civil','Direito Penal','Direito do Trabalho','Direito Empresarial','Direito Tributário','Ética Profissional']},
+    {name:'Personalizado',discs:[]},
+  ];
+  return `<div class="view-content" style="max-width:700px;margin:0 auto">
+  <div style="text-align:center;margin-bottom:32px;padding-top:20px">
+    <div style="width:60px;height:60px;border:2px solid #FF0044;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;box-shadow:0 0 20px rgba(255,0,68,.5)">
+      <span style="font-family:\'JetBrains Mono\',monospace;font-weight:700;color:#FF0044;font-size:20px;text-shadow:0 0 8px #FF0044">ST</span>
+    </div>
+    <h1 style="font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:28px;color:#FFE6EE;margin-bottom:8px">Study Tracker</h1>
+    <div style="font-size:14px;color:#B080A0;line-height:1.6">Acompanhe seus estudos, identifique gaps e evolua com dados reais.</div>
+  </div>
+  <div style="border:1px solid rgba(255,0,68,.2);background:rgba(15,6,23,.7);padding:28px;margin-bottom:20px">
+    <div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;letter-spacing:.22em;color:#FF0044;margin-bottom:16px;text-shadow:0 0 4px #FF0044">CONFIGURAÇÃO INICIAL</div>
+    <div style="margin-bottom:20px">
+      <div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#B080A0;letter-spacing:.15em;margin-bottom:8px">SEU NOME</div>
+      <input id="ob-name" type="text" placeholder="ex: Virginia" value="${e(S.userName.split(' —')[0].split(' ·')[0])}" style="width:100%;padding:12px;background:rgba(6,0,15,.6);border:1px solid rgba(255,0,68,.2);color:#FFE6EE;font-size:14px;box-sizing:border-box">
+    </div>
+    <div style="margin-bottom:24px">
+      <div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#B080A0;letter-spacing:.15em;margin-bottom:10px">QUAL PROVA OU CONCURSO?</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${presets.map((p,i)=>\`<button onclick="selectPreset(\${i})" style="padding:14px 16px;background:\${S.examName===p.name?'rgba(255,0,68,.15)':'rgba(6,0,15,.4)'};border:1px solid \${S.examName===p.name?'#FF0044':'rgba(255,0,68,.12)'};color:\${S.examName===p.name?'#FFE6EE':'#B080A0'};font-family:'Space Grotesk',sans-serif;font-weight:500;font-size:13px;text-align:left;cursor:pointer;\${S.examName===p.name?'box-shadow:0 0 12px rgba(255,0,68,.35)':''}">
+          <div style="font-weight:600;color:\${S.examName===p.name?'#FFE6EE':'#A98FB8'}">\${e(p.name)}</div>
+          \${p.discs.length>0?\`<div style="font-size:11px;color:#8B6F95;margin-top:4px">\${p.discs.slice(0,4).join(', ')}\${p.discs.length>4?' +\''+(p.discs.length-4):''}</div>\`:'<div style="font-size:11px;color:#8B6F95;margin-top:4px">Defina suas próprias disciplinas</div>'}
+        </button>\`).join('')}
+      </div>
+    </div>
+    ${S.examName==='Personalizado'?\`<div style="margin-bottom:20px">
+      <div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#B080A0;letter-spacing:.15em;margin-bottom:8px">NOME DO CONCURSO / PROVA</div>
+      <input id="ob-exam-custom" type="text" placeholder="ex: Concurso Receita Federal" style="width:100%;padding:12px;background:rgba(6,0,15,.6);border:1px solid rgba(255,0,68,.2);color:#FFE6EE;font-size:14px;box-sizing:border-box">
+    </div>
+    <div style="margin-bottom:20px">
+      <div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#B080A0;letter-spacing:.15em;margin-bottom:8px">DISCIPLINAS (uma por linha)</div>
+      <textarea id="ob-discs-custom" rows="6" placeholder="Direito Constitucional\nDireito Administrativo\n..." style="width:100%;padding:12px;background:rgba(6,0,15,.6);border:1px solid rgba(255,0,68,.2);color:#FFE6EE;font-size:13px;box-sizing:border-box;line-height:1.6"></textarea>
+    </div>\`:''}
+    <div style="display:flex;gap:12px;margin-top:8px">
+      <button onclick="finishOnboarding()" ${S.examName?'':'disabled'} style="flex:1;padding:14px;background:linear-gradient(180deg,rgba(255,0,68,.18),rgba(255,0,68,.05));border:1.5px solid ${S.examName?'#FF0044':'rgba(255,0,68,.2)'};color:${S.examName?'#FFE6EE':'#8B6F95'};font-family:\'Space Grotesk\',sans-serif;font-weight:700;font-size:14px;letter-spacing:.18em;text-transform:uppercase;${S.examName?'box-shadow:0 0 18px rgba(255,0,68,.4);cursor:pointer':''}">▸ COMEÇAR</button>
+    </div>
+  </div>
+  <div style="text-align:center;font-size:11px;color:#8B6F95;padding:12px">Você pode alterar tudo isso depois nas configurações.</div>
+</div>`;
+}
+
+const PRESETS = [
+  {name:'ANPD — Especialista em Regulação',discs:['Direito Constitucional','Direito Administrativo','LGPD','Direito Digital / Marco Civil','Segurança da Informação','Governança de IA','Língua Portuguesa','Raciocínio Lógico']},
+  {name:'CGU — Auditor Federal (AFFC)',discs:['Direito Constitucional','Direito Administrativo','Auditoria Governamental','Contabilidade Pública','Administração Financeira e Orçamentária','Controle Interno e Externo','Língua Portuguesa','Raciocínio Lógico']},
+  {name:'TCU — Auditor de Controle Externo',discs:['Direito Constitucional','Direito Administrativo','Controle Externo','Auditoria Governamental','Administração Financeira e Orçamentária','Contabilidade Pública','Governança e Gestão Pública','Língua Portuguesa','Raciocínio Lógico']},
+  {name:'OAB — Exame de Ordem',discs:['Direito Constitucional','Direito Administrativo','Direito Civil','Direito Penal','Direito do Trabalho','Direito Empresarial','Direito Tributário','Ética Profissional']},
+  {name:'Personalizado',discs:[]},
+];
+
+const DISC_COLORS_POOL = ['#FF2D66','#FF5577','#D946A8','#B864E8','#8A7CFF','#5AC8FF','#FFB400','#39FF7A','#FF8844','#CC66FF','#66CCFF','#FF66AA'];
+
+function selectPreset(idx){
+  const p = PRESETS[idx];
+  S.examName = p.name;
+  if(p.discs.length > 0){
+    // Mapear disciplinas que NÃO estão no DISCS padrão como customDiscs
+    const baseNames = DISCS.map(d=>d.name);
+    S.customDiscs = p.discs
+      .filter(name => !baseNames.includes(name))
+      .map((name,i) => ({
+        name,
+        short: name.replace(/[a-z\s]/g,'').slice(0,8) || name.slice(0,6).toUpperCase(),
+        color: DISC_COLORS_POOL[(DISCS.length + i) % DISC_COLORS_POOL.length],
+        sub: ''
+      }));
+  } else {
+    S.customDiscs = [];
+  }
+  render();
+}
+
+function finishOnboarding(){
+  const nameEl = document.getElementById('ob-name');
+  if(nameEl && nameEl.value.trim()) S.userName = nameEl.value.trim();
+
+  if(S.examName === 'Personalizado'){
+    const examEl = document.getElementById('ob-exam-custom');
+    const discsEl = document.getElementById('ob-discs-custom');
+    if(examEl && examEl.value.trim()) S.examName = examEl.value.trim();
+    if(discsEl && discsEl.value.trim()){
+      const lines = discsEl.value.split('\n').map(l=>l.trim()).filter(l=>l);
+      const baseNames = DISCS.map(d=>d.name);
+      S.customDiscs = lines
+        .filter(name => !baseNames.includes(name))
+        .map((name,i) => ({
+          name,
+          short: name.replace(/[a-z\s]/g,'').slice(0,8) || name.slice(0,6).toUpperCase(),
+          color: DISC_COLORS_POOL[(DISCS.length + i) % DISC_COLORS_POOL.length],
+          sub: ''
+        }));
+    }
+  }
+
+  S.setupDone = true;
+  S.view = 'dashboard';
+  saveLocal();
+  render();
+}
+
 
 function buildSetup(){
   const SQL=`-- Execute no SQL Editor do Supabase:
@@ -924,8 +1187,8 @@ create policy "anon_all" on sessions
 </div>`;}
 
 function buildFooter(){
-  return`<div style="margin-top:40px;padding-top:16px;border-top:1px dashed rgba(255,0,68,.12);display:flex;justify-content:space-between;align-items:center;font-family:'JetBrains Mono',monospace;font-size:10px;color:#8B6F95;letter-spacing:.15em;flex-wrap:wrap;gap:10px">
-  <span>STUDY_TRACKER.SYS v2.0 // CONCURSOS_FEDERAIS // ${S.sessions.length} sessões</span>
+  return`<div style="margin-top:40px;padding-top:16px;padding-bottom:80px;border-top:1px dashed rgba(255,0,68,.12);display:flex;justify-content:space-between;align-items:center;font-family:'JetBrains Mono',monospace;font-size:10px;color:#8B6F95;letter-spacing:.15em;flex-wrap:wrap;gap:10px">
+  <span>STUDY_TRACKER // ${S.sessions.length} sessões registradas</span>
   <div style="display:flex;gap:8px">
     <button onclick="setView('setup')" style="padding:5px 12px;background:${sbOk()?'rgba(57,255,122,.08)':'transparent'};border:1px solid ${sbOk()?'rgba(57,255,122,.4)':'rgba(255,0,68,.2)'};color:${sbOk()?'#39FF7A':'#B080A0'};font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase" title="${sbOk()?'Supabase conectado — clique para gerenciar':'Configurar armazenamento em nuvem'}">${sbOk()?'☁ NUVEM ATIVA':'☁ CONFIGURAR NUVEM'}</button>
     <button onclick="importData()" style="padding:5px 12px;background:transparent;border:1px solid rgba(255,0,68,.2);color:#B080A0;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase">↑ IMPORTAR</button>
@@ -945,12 +1208,17 @@ function render(){
 
   const c=computed();
   let vHtml='';
-  if(S.view==='setup')vHtml=buildSetup();
+  if(!S.setupDone && S.sessions.length===0 && S.view!=='setup') vHtml=buildOnboarding();
+  else if(S.view==='setup')vHtml=buildSetup();
   else if(S.view==='dashboard')vHtml=buildDashboard(c);
   else if(S.view==='session')vHtml=buildSession(c);
   else if(S.view==='history')vHtml=buildHistory(c);
   else vHtml=buildEvolucao(c);
-  document.getElementById('app').innerHTML=buildHeader()+vHtml+buildFooter()+buildTimer();
+  const isOnboarding = !S.setupDone && S.sessions.length===0 && S.view!=='setup';
+  const headerHtml = isOnboarding ? '' : buildHeader();
+  const footerHtml = isOnboarding ? '' : buildFooter();
+  const timerHtml = isOnboarding ? '' : buildTimer();
+  document.getElementById('app').innerHTML=headerHtml+vHtml+footerHtml+timerHtml;
 
   // Restaura foco no mesmo campo após rebuild do DOM
   if(adf){
@@ -1018,7 +1286,7 @@ function saveSession(){
   if(!f.date||isNaN(hours)||hours<=0)return;
   const autoErr=(questions>0&&correct===questions)?'Sem erros':(questions>0?(f.errorType||''):'');const sess={id:Date.now(),date:f.date,block:f.block,discipline:f.discipline,hours,questions,correct,errorType:autoErr,notes:f.notes||''};
   S.sessions=[sess,...S.sessions];
-  S.form={date:todayISO(),block:f.block,discipline:f.discipline,hours:'',questions:'',correct:'',errorType:'',notes:''};
+  S.form={date:todayISO(),block:f.block,discipline:f.discipline||getDiscs()[0]?.name||'',hours:'',questions:'',correct:'',errorType:'',notes:''};
   if(!sbOk())saveLocal();
   flash('▲ SESSÃO REGISTRADA +'+Math.round(hours*10)+' XP');
   if(sbOk())sbReq('sessions',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify(sToDB(sess))}).catch(err=>flash('⚠ Supabase: '+err.message));
@@ -1041,7 +1309,7 @@ function updateSession(){
   const autoErrU=(questions>0&&correct===questions)?'Sem erros':(questions>0?(f.errorType||''):'');const updated={...existing,date:f.date,block:f.block,discipline:f.discipline,hours,questions,correct,errorType:autoErrU,notes:f.notes||''};
   S.sessions=S.sessions.map(s=>s.id===eid?updated:s);
   S.editId=null;
-  S.form={date:todayISO(),block:'Bloco A',discipline:'Direito Constitucional',hours:'',questions:'',correct:'',errorType:'',notes:''};
+  S.form={date:todayISO(),block:'Bloco A',discipline:S.form.discipline||getDiscs()[0]?.name||'',hours:'',questions:'',correct:'',errorType:'',notes:''};
   if(!sbOk())saveLocal();
   S.view='history';flash('▲ SESSÃO ATUALIZADA');
   if(sbOk())sbReq('sessions?id=eq.'+eid,{method:'PATCH',body:JSON.stringify(sToDB(updated))}).catch(err=>flash('⚠ Supabase: '+err.message));
