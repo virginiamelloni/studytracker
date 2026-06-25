@@ -2,7 +2,7 @@
   "name": "Study Tracker",
   "short_name": "StudyTracker",
   "description": "Tracker de estudos para concursos e provas. Gamificado, com revisão espaçada e análise de gaps.",
-  "start_url": "./StudyTracker_v3.html",
+  "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
