@@ -3,7 +3,7 @@ const VERSION    = 'st-v4-tier2';
 const CACHE_NAME = 'study-tracker-' + VERSION;
 const APP_FILES  = [
   './',
-  './StudyTracker_v3.html',
+  './index.html',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
