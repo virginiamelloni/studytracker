@@ -100,9 +100,13 @@ const BLOCK_META = {
   'Noite':    {sub:'1h · 19h',             hint:'Revisão e questões do conteúdo estudado de manhã'},
   'Sábado':   {sub:'3h · 2 ciclos',        hint:'Questões ou simulado no 1º ciclo; teoria e revisão de erros no 2º'},
   'Revisão':  {sub:'Revisão espaçada',     hint:'Revisão D+1, D+7 ou D+30 dos erros registrados'},
-  'Simulado': {sub:'Prova completa',       hint:'Simulado cronometrado com todas as disciplinas'}
+  'Simulado': {sub:'Prova completa',       hint:'Simulado cronometrado com todas as disciplinas'},
+  'Outros':   {sub:'Personalizável',       hint:'Fora da rotina: estudo extra, feriado, webinar, leitura avulsa. Dê um nome opcional.'}
 };
-const BLOCKS = ['Manhã','Almoço','Noite','Sábado','Revisão','Simulado'];
+const BLOCKS = ['Manhã','Almoço','Noite','Sábado','Revisão','Simulado','Outros'];
+// Blocos fixos da rotina; qualquer outro nome (inclusive os antigos, como "Bloco A") é tratado como "Outros"
+function isStdBlock(b){return BLOCKS.includes(b)&&b!=='Outros'}
+function setBlockLabel(v){const t=String(v||'').trim().slice(0,30);S.form={...S.form,block:t&&!isStdBlock(t)?t:'Outros'};}
 function defaultBlock(){
   const n=new Date(),h=n.getHours();
   if(n.getDay()===6)return 'Sábado';
@@ -735,10 +739,11 @@ function buildSession(c){
   const pctBorder=c.fpct!=null?c.fpctSt.color:'rgba(255,0,68,.15)';
   const previewColor=discMeta(f.discipline).color;
 
+  const isOther=!isStdBlock(f.block);
   let blockChips=BLOCKS.map(b=>{
-    const active=f.block===b;
+    const active=b==='Outros'?isOther:f.block===b;
     const meta=BLOCK_META[b];
-    return`<div style="flex:1;min-width:0">
+    return`<div style="flex:1;min-width:0;${b==='Outros'?'grid-column:1/-1':''}">
       <button class="chip-btn" onclick="setForm('block','${jsq(b)}')" title="${e(meta.hint)}" style="width:100%;padding:10px 6px;background:${active?'rgba(255,0,68,.18)':'transparent'};border:1px solid ${active?'#FF0044':'rgba(255,0,68,.12)'};color:${active?'#FFE6EE':'#A98FB8'};font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:10px;letter-spacing:.1em;text-transform:uppercase;${active?'box-shadow:0 0 10px rgba(255,0,68,.4)':''}">
         <div>${b}</div>
         <div style="font-family:'JetBrains Mono',monospace;font-size:8px;font-weight:400;color:${active?'#FF8899':'#8B6F95'};margin-top:3px;letter-spacing:.06em;text-transform:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${meta.sub}</div>
@@ -773,6 +778,7 @@ function buildSession(c){
         <div>
           ${lbl('Bloco')}
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px">${blockChips}</div>
+          ${isOther?`<input type="text" maxlength="30" data-field="blockLabel" placeholder="Nome do bloco (opcional): ex. Feriado, Webinar" value="${e(f.block==='Outros'?'':f.block)}" oninput="setBlockLabel(this.value)" style="width:100%;margin-top:6px;padding:9px 12px;font-size:12px">`:''}
         </div>
         <div style="grid-column:1/-1">
           ${lbl('Disciplina',true)}
