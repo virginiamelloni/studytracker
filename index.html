@@ -579,7 +579,7 @@ function buildHeader(){
       <input id="user-name-input" value="${e(S.userName)}" oninput="setUserName(this.value)" title="Clique para editar seu nome/status" style="background:transparent;border:none;border-bottom:1px dashed rgba(255,0,68,.2);color:#39FF7A;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;text-align:right;width:220px;padding:2px 0;text-shadow:0 0 8px #39FF7A" onfocus="this.style.borderBottomColor='#FF0044'" onblur="this.style.borderBottomColor='rgba(255,0,68,.2)'">
     </div>
     <div style="display:flex;align-items:center;gap:8px">
-      <input type="date" title="Data da prova" value="${e(S.examDate)}" onchange="setExamDate(this.value)" style="padding:4px 8px;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.1em;color-scheme:dark;background:transparent;border:1px solid rgba(255,0,68,.2);width:130px">
+      <input type="date" title="Data da prova" value="${e(S.examDate)}" min="2026-01-01" max="2030-12-31" onchange="setExamDate(this.value)" onblur="render()" style="padding:5px 8px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.06em;color-scheme:dark;background:transparent;border:1px solid rgba(255,0,68,.2);width:150px">
       <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:${examColor};text-shadow:0 0 6px ${examColor};letter-spacing:.12em;white-space:nowrap">${examStr}</div>
     </div>
   </div>
@@ -1346,7 +1346,7 @@ function setFormCorrectSilent(v){
 }
 function setFilter(f){S.filter=f;render()}
 function setWeekFilter(f){S.weekFilter=f;render()}
-function setExamDate(d){S.examDate=d;saveLocal();render()}
+function setExamDate(d){if(d&&d.slice(0,4)<'2000')return;S.examDate=d;saveLocal()}
 
 function saveSession(){
   const f=S.form;
