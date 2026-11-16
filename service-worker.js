@@ -1,5 +1,5 @@
 // Study Tracker PWA: Service Worker v5
-const VERSION    = 'st-v6-outros';
+const VERSION    = 'st-v7-disciplinas';
 const CACHE_NAME = 'study-tracker-' + VERSION;
 const APP_FILES  = [
   './',

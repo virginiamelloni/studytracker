@@ -73,13 +73,15 @@ const SB_URL='st-sb-url';
 const SB_KEY_='st-sb-key';
 const DISCS = [
   {name:'Direito Constitucional',      short:'D.CONST', color:'#FF2D66', sub:'CF/88 | JURIS'},
-  {name:'Direito Administrativo',      short:'D.ADM',   color:'#FF5577', sub:'8.112 | 14.133'},
+  {name:'Direito Administrativo',      short:'D.ADM',   color:'#FF5577', sub:'9.784 | 8.112 | 14.133'},
+  {name:'Regulação e Agências',        short:'REGUL',   color:'#FF8844', sub:'13.848 | AIR | ECON. REG.'},
   {name:'LGPD',                        short:'LGPD',    color:'#D946A8', sub:'13.709 | ANPD'},
-  {name:'Direito Digital / Marco Civil',short:'D.DIG',  color:'#B864E8', sub:'LEI 12.965 | DEC. 8.771'},
-  {name:'Segurança da Informação',     short:'SEG.INF', color:'#8A7CFF', sub:'ISO 27001 | NIST'},
-  {name:'Governança de IA',            short:'GOV.IA',  color:'#5AC8FF', sub:'EU AI ACT | OCDE'},
+  {name:'Direito Digital / Marco Civil',short:'D.DIG',  color:'#B864E8', sub:'LEI 12.965 | ECA DIGITAL'},
+  {name:'Segurança da Informação',     short:'DADOS/TI',color:'#8A7CFF', sub:'DADOS | NUVEM | ISO 27001'},
+  {name:'Governança de IA',            short:'GOV.IA',  color:'#5AC8FF', sub:'PL 2.338 | EU AI ACT'},
+  {name:'Ética e Integridade',         short:'ÉTICA',   color:'#39FF7A', sub:'DEC. 1.171 | LEI 12.813'},
   {name:'Língua Portuguesa',           short:'PORT',    color:'#FFB400', sub:'GRAMÁTICA | TEXTO'},
-  {name:'Raciocínio Lógico',           short:'R.LOG',   color:'#39FF7A', sub:'PROPOSIC | ARRANJO'}
+  {name:'Língua Inglesa',              short:'INGL',    color:'#66CCFF', sub:'LEITURA TÉCNICA'}
 ];
 function getDiscs(){
   const base = DISCS.map(d=>({...d}));
@@ -1065,7 +1067,7 @@ function buildEvolucao(c){
 
 
 const PRESETS = [
-  {name:'ANPD — Especialista em Regulação',discs:['Direito Constitucional','Direito Administrativo','LGPD','Direito Digital / Marco Civil','Segurança da Informação','Governança de IA','Língua Portuguesa','Raciocínio Lógico']},
+  {name:'ANPD — Especialista em Regulação',discs:['Direito Constitucional','Direito Administrativo','Regulação e Agências','LGPD','Direito Digital / Marco Civil','Segurança da Informação','Governança de IA','Ética e Integridade','Língua Portuguesa','Língua Inglesa']},
   {name:'CGU — Auditor Federal (AFFC)',discs:['Direito Constitucional','Direito Administrativo','Auditoria Governamental','Contabilidade Pública','Administração Financeira e Orçamentária','Controle Interno e Externo','Língua Portuguesa','Raciocínio Lógico']},
   {name:'TCU — Auditor de Controle Externo',discs:['Direito Constitucional','Direito Administrativo','Controle Externo','Auditoria Governamental','Administração Financeira e Orçamentária','Contabilidade Pública','Governança e Gestão Pública','Língua Portuguesa','Raciocínio Lógico']},
   {name:'OAB — Exame de Ordem',discs:['Direito Constitucional','Direito Administrativo','Direito Civil','Direito Penal','Direito do Trabalho','Direito Empresarial','Direito Tributário','Ética Profissional']},
