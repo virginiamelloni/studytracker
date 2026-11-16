@@ -93,25 +93,37 @@ function getDiscs(){
   return base;
 }
 
+// Blocos espelham a rotina do Google Calendar. Sessões antigas (Bloco A/B/C, Extra) continuam legíveis.
 const BLOCK_META = {
-  'Bloco A':  {sub:'Teoria — 2h',         hint:'Conteúdo novo, leitura de lei, aulas'},
-  'Bloco B':  {sub:'Teoria — 1h',         hint:'Conteúdo novo, leitura de lei, aulas (bloco curto)'},
-  'Bloco C':  {sub:'Questões — 1h',       hint:'Resolução e revisão de questões Cebraspe'},
-  'Extra':    {sub:'Opcional',             hint:'Aprofundamento, mapa mental, resumo (tempo livre)'},
-  'Revisão':  {sub:'Revisão espaçada',     hint:'Revisão D+1, D+7 ou D+30 após aprendizado inicial'},
+  'Manhã':    {sub:'1h · 6h45',            hint:'Estudo profundo: teoria e questões do foco principal'},
+  'Almoço':   {sub:'30 min',               hint:'Conteúdo curto: vídeos e leituras da trilha'},
+  'Noite':    {sub:'1h · 19h',             hint:'Revisão e questões do conteúdo estudado de manhã'},
+  'Sábado':   {sub:'3h · 2 ciclos',        hint:'Questões ou simulado no 1º ciclo; teoria e revisão de erros no 2º'},
+  'Revisão':  {sub:'Revisão espaçada',     hint:'Revisão D+1, D+7 ou D+30 dos erros registrados'},
   'Simulado': {sub:'Prova completa',       hint:'Simulado cronometrado com todas as disciplinas'}
 };
-const BLOCKS = ['Bloco A','Bloco B','Bloco C','Extra','Revisão','Simulado'];
+const BLOCKS = ['Manhã','Almoço','Noite','Sábado','Revisão','Simulado'];
+function defaultBlock(){
+  const n=new Date(),h=n.getHours();
+  if(n.getDay()===6)return 'Sábado';
+  if(h<10)return 'Manhã';
+  if(h>=11&&h<15)return 'Almoço';
+  return 'Noite';
+}
 const ERR_TYPES = ['Interpretação de enunciado','Gap de conteúdo — não sabia o assunto','Gap de linguagem concursal — sabia mas a formulação confundiu','Erro de atenção / leitura','Desconhecimento de jurisprudência / súmula','Confusão entre institutos similares'];
 const MONTHS = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
 const WEEK_DAYS = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-const DAILY_TARGET_H = 3.5;
+// Meta de horas por dia da semana (0 = domingo), espelhando a rotina do calendário.
+// Seg: noite 1h | Ter e Qui: manhã 1h + almoço 30 min + noite 1h | Qua: manhã 1h + almoço 30 min | Sáb: 3h
+const DAY_PLAN_H = {0:0, 1:1, 2:2.5, 3:1.5, 4:2.5, 5:0, 6:3};
+const WEEKLY_TARGET_H = Object.values(DAY_PLAN_H).reduce((a,b)=>a+b,0);
+function dayTarget(iso){return DAY_PLAN_H[new Date(iso+'T12:00:00').getDay()]||0}
+function fmtH(h){return String(+h.toFixed(1)).replace('.',',')}
 const PHRASES = [
   'Mantenha o plano. Você sabia que não seria fácil.',
   'No pior cenário, você aprende. No melhor, isso pode mudar a sua vida inteira.',
   'Acredite no processo. O tempo recompensa quem não desiste.'
 ];
-const WEEKLY_TARGET_H = 17.5;
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
 let S = {
@@ -133,15 +145,19 @@ let S = {
   sbUrl:localStorage.getItem('st-sb-url')||'',
   sbKey:localStorage.getItem('st-sb-key')||'',
   sbStatus:'init',sbError:'',loading:false,
+  pending:[],syncing:false,
   form:{
-    date: todayISO(), block: 'Bloco A', discipline: 'Direito Constitucional',
+    date: todayISO(), block: defaultBlock(), discipline: 'Direito Constitucional',
     hours: '', questions: '', correct: '', errorType: '', notes: ''
   }
 };
 
 // ─── DATE UTILS ───────────────────────────────────────────────────────────────
-function todayISO(){return new Date().toISOString().slice(0,10)}
-function daysAgoISO(n){const d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()-n);return d.toISOString().slice(0,10)}
+// Datas sempre no fuso local. toISOString() usa UTC e, no Brasil, virava o dia seguinte após as 21h.
+function localISO(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function todayISO(){return localISO(new Date())}
+function daysAgoISO(n){const d=new Date();d.setHours(12,0,0,0);d.setDate(d.getDate()-n);return localISO(d)}
+function ageInDays(iso){const t=new Date();t.setHours(12,0,0,0);return Math.round((t-new Date(iso+'T12:00:00'))/86400000)}
 function fmtShort(iso){if(!iso)return'—';const[,m,d]=iso.split('-');return d+'/'+m}
 function fmtLong(iso){if(!iso)return'—';const[y,m,d]=iso.split('-');return d+' '+MONTHS[+m-1]+' '+y}
 function todayStamp(){const n=new Date();return n.getDate().toString().padStart(2,'0')+' '+MONTHS[n.getMonth()]+' '+n.getFullYear()}
@@ -169,56 +185,24 @@ function daysToExam(){
   return Math.max(0,Math.round((t-now)/(1000*60*60*24)));
 }
 function e(s){return s==null?'':String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+// Escapa texto para uso dentro de string JS com aspas simples em atributo onclick
+function jsq(s){return e(String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"))}
 function thisWeekRange(){
-  const now=new Date();now.setHours(0,0,0,0);
+  const now=new Date();now.setHours(12,0,0,0);
   const dow=now.getDay();
   const fromMon=dow===0?6:dow-1;
   const mon=new Date(now);mon.setDate(now.getDate()-fromMon);
   const dates=[];
-  for(let d=0;d<7;d++){const dd=new Date(mon);dd.setDate(mon.getDate()+d);dates.push(dd.toISOString().slice(0,10));}
+  for(let d=0;d<7;d++){const dd=new Date(mon);dd.setDate(mon.getDate()+d);dates.push(localISO(dd));}
   return dates;
 }
 
-// ─── SEED ─────────────────────────────────────────────────────────────────────
-function seedSessions(){
-  let seed=9173;
-  const rand=()=>{seed=(seed*9301+49297)%233280;return seed/233280};
-  const notesPool={
-    'Direito Constitucional':['Art. 5º — confundi inciso LIV com LV.','Súmula vinculante × repercussão geral.','Controle difuso × concentrado.','Princípio da legalidade × reserva legal.'],
-    'Direito Administrativo':['Lei 8.112 — estabilidade × efetividade.','Lei 14.133 — modalidades e dispensa.','Improbidade — Lei 14.230 alterou tudo.','Atos administrativos — atributos × elementos.'],
-    'LGPD':['Bases legais para dados sensíveis (Art. 11).','DPO obrigatório × facultativo.','Portabilidade × direito de acesso.','ANPD — competências fiscalizatórias.'],
-    'Direito Digital / Marco Civil':['Marco Civil — neutralidade de rede.','Responsabilidade provedores aplicação × conexão.','Direito ao esquecimento — STF tema 786.','Lei Fake News × Marco Civil.'],
-    'Segurança da Informação':['CIA triad — pegadinha em vulnerabilidade.','Phishing × spear phishing × whaling.','ISO 27001 — Annex A versão 2022.','NIST × ISO 27035.'],
-    'Governança de IA':['EU AI Act — risco proibido × alto × limitado.','Princípios OCDE × UNESCO.','PL 2338/2023 — Marco Legal IA no BR.','Vieses algorítmicos.'],
-    'Língua Portuguesa':['Concordância verbal — sujeito posposto.','Crase facultativa × proibida × obrigatória.','Regência verbal — implicar e visar.','Aposto explicativo × restritivo.'],
-    'Raciocínio Lógico':['Proposições — condicional × bicondicional.','Arranjo × permutação × combinação.','Probabilidade condicional — Bayes.','De Morgan, contrapositiva.']
-  };
-  const baseAcc={'Direito Constitucional':0.76,'Direito Administrativo':0.68,'LGPD':0.82,'Direito Digital / Marco Civil':0.61,'Segurança da Informação':0.58,'Governança de IA':0.34,'Língua Portuguesa':0.71,'Raciocínio Lógico':0.42};
-  const arr=[];let id=1;
-  for(let day=34;day>=0;day--){
-    if(rand()<0.20)continue;
-    const n=1+Math.floor(rand()*2.4);
-    for(let s=0;s<n;s++){
-      const disc=DISCS[Math.floor(rand()*DISCS.length)];
-      const block=BLOCKS[Math.floor(rand()*3.6)]||'Bloco A';
-      const hours=+(0.5+rand()*2.2).toFixed(1);
-      const questions=8+Math.floor(rand()*32);
-      const acc=Math.max(0.10,Math.min(0.98,baseAcc[disc.name]+(rand()-0.5)*0.28));
-      const correct=Math.max(0,Math.min(questions,Math.round(questions*acc)));
-      const etPool=['Interpretação de enunciado','Gap de conteúdo — não sabia o assunto','Gap de linguagem concursal — sabia mas a formulação confundiu','Erro de atenção / leitura','Desconhecimento de jurisprudência / súmula'];
-      const et=correct===questions?'Sem erros':etPool[Math.floor(rand()*etPool.length)];
-      const np=notesPool[disc.name];
-      const notes=correct===questions?'Bloco limpo — manter ritmo.':np[Math.floor(rand()*np.length)];
-      arr.push({id:id++,date:daysAgoISO(day),block,discipline:disc.name,hours,questions,correct,errorType:et,notes});
-    }
-  }
-  return arr;
-}
-
 // ─── STORAGE ──────────────────────────────────────────────────────────────────
+const PENDING_KEY=KEY+'-pending';
 function saveLocal(){
   try{localStorage.setItem(KEY,JSON.stringify({sessions:S.sessions,examDate:S.examDate,userName:S.userName,examName:S.examName,customDiscs:S.customDiscs,setupDone:S.setupDone}))}catch(_){}
 }
+function savePending(){try{localStorage.setItem(PENDING_KEY,JSON.stringify(S.pending))}catch(_){}}
 function load(){
   // Carrega dados locais primeiro (fallback imediato)
   try{
@@ -235,24 +219,22 @@ function load(){
       if(p.userName)S.userName=p.userName;
     }}
   }catch(_){}
+  try{const pr=JSON.parse(localStorage.getItem(PENDING_KEY)||'[]');if(Array.isArray(pr))S.pending=pr;}catch(_){}
   // Verifica credenciais Supabase
   S.sbUrl=localStorage.getItem(SB_URL)||'';
   S.sbKey=localStorage.getItem(SB_KEY_)||'';
   if(S.sbUrl&&S.sbKey){S.sbStatus='connecting';render();connectSb();}
   else{S.sbStatus='local';}
 }
-function save(){
-  try{localStorage.setItem(KEY,JSON.stringify({sessions:S.sessions,examDate:S.examDate,userName:S.userName}))}catch(_){}
-}
 function clearAll(){
   const ans=prompt('Digite LIMPAR (em maiúsculas) para apagar todas as sessões. Esta ação não tem volta.');
   if(ans!=='LIMPAR')return;
   S.sessions=[];S.editId=null;S.view='dashboard';
-  saveLocal();render();
-  if(sbOk())sbReq('sessions?id=gt.0',{method:'DELETE'}).catch(()=>{});
+  S.pending=[];
+  saveLocal();queueOp({op:'deleteAll'});render();
 }
 function exportData(){
-  const data=JSON.stringify({sessions:S.sessions,examDate:S.examDate,exportedAt:new Date().toISOString()},null,2);
+  const data=JSON.stringify({sessions:S.sessions,examDate:S.examDate,examName:S.examName,userName:S.userName,customDiscs:S.customDiscs,exportedAt:new Date().toISOString()},null,2);
   const blob=new Blob([data],{type:'application/json'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
@@ -269,11 +251,15 @@ function importData(){
       try{
         const p=JSON.parse(ev.target.result);
         if(!Array.isArray(p.sessions))throw new Error('Formato inválido');
-        if(!confirm(`Importar ${p.sessions.length} sessões? Os dados atuais serão substituídos.`))return;
+        if(!confirm(`Importar ${p.sessions.length} sessões? Os dados atuais serão substituídos, inclusive na nuvem.`))return;
         S.sessions=p.sessions;
         if(p.examDate)S.examDate=p.examDate;
+        if(p.examName)S.examName=p.examName;
+        if(p.userName)S.userName=p.userName;
+        if(Array.isArray(p.customDiscs))S.customDiscs=p.customDiscs;
         saveLocal();
-        if(sbOk()){S.sessions.forEach(s=>sbReq('sessions',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify(sToDB(s))}).catch(()=>{}));}
+        S.pending=[{op:'deleteAll'},...S.sessions.map(s=>({op:'upsert',s}))];
+        savePending();flushPending();
         render();flash('▲ DADOS IMPORTADOS COM SUCESSO');
       }catch(err){alert('Erro ao importar: '+err.message);}
     };
@@ -286,24 +272,62 @@ function importData(){
 // ─── SUPABASE ─────────────────────────────────────────────────────────────────
 function sbOk(){return S.sbStatus==='connected';}
 function sbHdr(x={}){return{'Content-Type':'application/json','apikey':S.sbKey,'Authorization':'Bearer '+S.sbKey,...x};}
-function dbToS(r){return{id:r.id,date:r.date,block:r.block||'',discipline:r.discipline||'',hours:+r.hours||0,questions:+r.questions||0,correct:+r.correct||0,errorType:r.error_type||'Sem erros',notes:r.notes||''};}
+function dbToS(r){const q=+r.questions||0;return{id:r.id,date:r.date,block:r.block||'',discipline:r.discipline||'',hours:+r.hours||0,questions:q,correct:+r.correct||0,errorType:q>0?(r.error_type||''):'',notes:r.notes||''};}
 function sToDB(s){return{id:s.id,date:s.date,block:s.block,discipline:s.discipline,hours:s.hours,questions:s.questions,correct:s.correct,error_type:s.errorType,notes:s.notes};}
 async function sbReq(path,opts={}){
   const r=await fetch(S.sbUrl+'/rest/v1/'+path,{...opts,headers:sbHdr(opts.headers||{})});
   if(!r.ok){const t=await r.text();throw new Error(r.status+': '+t);}
   return r;
 }
+
+// Fila de sincronização: toda alteração é gravada localmente primeiro e enviada à nuvem quando houver conexão.
+// Antes, uma falha de rede descartava a sessão em silêncio e o próximo carregamento sobrescrevia os dados locais.
+function queueOp(op){S.pending.push(op);savePending();flushPending();}
+async function flushPending(){
+  if(S.syncing||!S.sbUrl||!S.sbKey||S.pending.length===0)return;
+  S.syncing=true;
+  try{
+    while(S.pending.length>0){
+      const op=S.pending[0];
+      if(op.op==='upsert'){
+        await sbReq('sessions',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(sToDB(op.s))});
+      }else if(op.op==='delete'){
+        await sbReq('sessions?id=eq.'+op.id,{method:'DELETE'});
+      }else if(op.op==='deleteAll'){
+        await sbReq('sessions?id=gt.0',{method:'DELETE'});
+      }
+      S.pending.shift();savePending();
+    }
+    if(S.sbStatus==='error'){S.sbStatus='connected';S.sbError='';}
+  }catch(err){
+    S.sbError=err.message;
+  }finally{
+    S.syncing=false;render();
+  }
+}
 async function connectSb(){
   try{
+    await flushPending();
     const r=await sbReq('sessions?select=*&order=id.desc');
-    S.sessions=(await r.json()).map(dbToS);
-    S.sbStatus='connected';S.sbError='';S.view='dashboard';
+    const remote=(await r.json()).map(dbToS);
+    // Alterações ainda pendentes prevalecem sobre a cópia da nuvem
+    const byId=new Map(remote.map(s=>[s.id,s]));
+    for(const p of S.pending){
+      if(p.op==='deleteAll')byId.clear();
+      else if(p.op==='upsert')byId.set(p.s.id,p.s);
+      else if(p.op==='delete')byId.delete(p.id);
+    }
+    S.sessions=[...byId.values()].sort((a,b)=>b.id-a.id);
+    saveLocal();
+    S.sbStatus='connected';S.sbError=S.pending.length>0?'alterações pendentes de envio':'';
+    if(S.view==='setup')S.view='dashboard';
   }catch(err){
     S.sbStatus='error';S.sbError=err.message;
     // mantém dados do localStorage como fallback
   }
   S.loading=false;render();
 }
+window.addEventListener('online',()=>{if(S.sbUrl&&S.sbKey)connectSb();});
 function saveSbConfig(){
   const url=document.getElementById('sb-url-inp')?.value?.trim();
   const key=document.getElementById('sb-key-inp')?.value?.trim();
@@ -326,11 +350,13 @@ function computed(){
   for(const x of sessions)(byDate[x.date]||(byDate[x.date]=[])).push(x);
 
   // Metrics
+  // Streak: dias de folga planejada (meta 0h) não quebram a sequência; hoje ainda não estudado também não.
   let streak=0;
   for(let d=0;d<365;d++){
     const iso=daysAgoISO(d);
-    if(byDate[iso]&&byDate[iso].length>0)streak++;
-    else{if(d===0)continue;break;}
+    if(byDate[iso]&&byDate[iso].length>0){streak++;continue;}
+    if(d===0||dayTarget(iso)===0)continue;
+    break;
   }
   const last35=Array.from({length:35},(_,i)=>daysAgoISO(34-i));
   const studyDays=last35.filter(d=>byDate[d]).length;
@@ -348,7 +374,7 @@ function computed(){
     const h=(byDate[d]||[]).reduce((a,x)=>a+x.hours,0);
     const isToday=d===today;
     const isFuture=d>today;
-    return{date:d,h,isToday,isFuture,dayLabel:WEEK_DAYS[new Date(d+'T12:00:00').getDay()]};
+    return{date:d,h,isToday,isFuture,target:dayTarget(d),dayLabel:WEEK_DAYS[new Date(d+'T12:00:00').getDay()]};
   });
 
   // Heatmap
@@ -361,9 +387,17 @@ function computed(){
   const active=last35.filter(d=>byDate[d]);
   const avgH=active.length>0?(active.reduce((a,d)=>a+(byDate[d]||[]).reduce((b,x)=>b+x.hours,0),0)/active.length).toFixed(1):'0.0';
 
-  // Spaced review D-7
+  // Revisão espaçada D+1, D+7 e D+30, com janelas de tolerância para dias sem estudo
+  const SR_STAGES=[{tag:'D+1',min:1,max:2},{tag:'D+7',min:7,max:9},{tag:'D+30',min:30,max:33}];
   const srDate=daysAgoISO(7);
-  const spaced=(byDate[srDate]||[]).filter(x=>x.correct<x.questions).map(x=>({...x,dc:discMeta(x.discipline).color,errRate:x.questions>0?Math.round(((x.questions-x.correct)/x.questions)*100):0}));
+  const spaced=[];
+  for(const x of sessions){
+    if(!(x.questions>0&&x.correct<x.questions))continue;
+    const age=ageInDays(x.date);
+    const stg=SR_STAGES.find(t=>age>=t.min&&age<=t.max);
+    if(stg)spaced.push({...x,stage:stg.tag,dc:discMeta(x.discipline).color,errRate:Math.round(((x.questions-x.correct)/x.questions)*100)});
+  }
+  spaced.sort((a,b)=>SR_STAGES.findIndex(t=>t.tag===a.stage)-SR_STAGES.findIndex(t=>t.tag===b.stage)||b.errRate-a.errRate);
 
   // Skill map
   const skillMap=getDiscs().map(d=>{
@@ -390,14 +424,14 @@ function computed(){
   let evSessions=sessions;
   let evRangeLabel='';
   if(wf!=='all'){
-    const now=new Date();now.setHours(0,0,0,0);
+    const now=new Date();now.setHours(12,0,0,0);
     const dow=now.getDay();
     const fromMon=dow===0?6:dow-1;
     const thisMon=new Date(now);thisMon.setDate(now.getDate()-fromMon);
     if(wf==='thisweek'){
-      const start=thisMon.toISOString().slice(0,10);
+      const start=localISO(thisMon);
       const endDate=new Date(thisMon);endDate.setDate(thisMon.getDate()+6);
-      const end=endDate.toISOString().slice(0,10);
+      const end=localISO(endDate);
       evSessions=sessions.filter(s=>s.date>=start&&s.date<=end);
       evRangeLabel=`${fmtShort(start)} → ${fmtShort(end)}`;
     } else if(wf.startsWith('w')){
@@ -405,8 +439,8 @@ function computed(){
       const offset=(wi-1)*7;
       const startDate=new Date(thisMon);startDate.setDate(thisMon.getDate()-offset);
       const endDate=new Date(startDate);endDate.setDate(startDate.getDate()+6);
-      const start=startDate.toISOString().slice(0,10);
-      const end=endDate.toISOString().slice(0,10);
+      const start=localISO(startDate);
+      const end=localISO(endDate);
       evSessions=sessions.filter(s=>s.date>=start&&s.date<=end);
       evRangeLabel=`${fmtShort(start)} → ${fmtShort(end)}`;
     }
@@ -426,7 +460,7 @@ function computed(){
     return{date,hrs,day:date.slice(8)};
   });
   const maxD=Math.max(0.5,...last14.map(x=>x.hrs));
-  const daily14=last14.map(x=>({...x,h:x.hrs>0?Math.max(3,(x.hrs/maxD)*100)+'%':'3%',color:x.hrs>=DAILY_TARGET_H?'#39FF7A':x.hrs>0?'#FF0044':'rgba(255,0,68,0.1)',glow:x.hrs>0?'0 0 12px rgba(255,0,68,.55)':'none',label:x.hrs>0?x.hrs.toFixed(1):''}));
+  const daily14=last14.map(x=>({...x,h:x.hrs>0?Math.max(3,(x.hrs/maxD)*100)+'%':'3%',color:(x.hrs>0&&x.hrs>=dayTarget(x.date))?'#39FF7A':x.hrs>0?'#FF0044':'rgba(255,0,68,0.1)',glow:x.hrs>0?'0 0 12px rgba(255,0,68,.55)':'none',label:x.hrs>0?x.hrs.toFixed(1):''}));
 
   const errMap={};
   for(const x of evSessions)if(x.correct<x.questions&&x.errorType&&x.errorType!=='Sem erros')errMap[x.errorType]=(errMap[x.errorType]||0)+(x.questions-x.correct);
@@ -478,7 +512,9 @@ function computed(){
   const totalQAll = sessions.reduce((a,x) => a+x.questions, 0);
   const avgQperH = totalHours > 0 ? +(totalQAll / totalHours).toFixed(1) : 0;
   const projectedQ = projectedH !== null && avgQperH > 0 ? Math.round(projectedH * avgQperH) : null;
-  const forecast = { dExam, avgDailyH: +avgDailyH.toFixed(2), projectedH, projectedQ, totalQAll, avgQperH };
+  const avgWeeklyH = +(avgDailyH*7).toFixed(1);
+  const targetH = dExam !== null ? Math.round(WEEKLY_TARGET_H/7*dExam) : null;
+  const forecast = { dExam, avgDailyH: +avgDailyH.toFixed(2), avgWeeklyH, targetH, projectedH, projectedQ, totalQAll, avgQperH };
 
   // ─── RANKING POR PRIORIDADE (menor acerto primeiro) ───────────────────────
   const priority = getDiscs().map(d => {
@@ -513,7 +549,7 @@ function sectionTag(t){return`<div style="font-family:'JetBrains Mono',monospace
 function buildHeader(){
   const v=S.view;
   const dtx=daysToExam();
-  const examStr=dtx!==null?`T-${dtx} DIAS PARA O EDITAL`:'CONFIGURE A DATA DO EDITAL';
+  const examStr=dtx!==null?`T-${dtx} DIAS PARA A PROVA`:'CONFIGURE A DATA DA PROVA';
   const examColor=dtx!==null?'#FF0044':'#B080A0';
   return`<header style="display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;gap:24px;flex-wrap:wrap">
   <div style="display:flex;align-items:center;gap:14px">
@@ -521,7 +557,7 @@ function buildHeader(){
       <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:#FF0044;font-size:14px;text-shadow:0 0 6px #FF0044">ST</span>
     </div>
     <div>
-      <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:18px;letter-spacing:.18em;text-transform:uppercase;color:#FFE6EE;text-shadow:0 0 12px rgba(255,0,68,.4)">Study Tracker <span style="font-size:11px;color:#8B6F95;letter-spacing:.1em">v2</span></div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:18px;letter-spacing:.18em;text-transform:uppercase;color:#FFE6EE;text-shadow:0 0 12px rgba(255,0,68,.4)">Study Tracker <span style="font-size:11px;color:#8B6F95;letter-spacing:.1em">v3</span></div>
       <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B080A0;letter-spacing:.25em;text-transform:uppercase;margin-top:2px">// ${S.examName||'study tracker'}</div>
     </div>
   </div>
@@ -537,7 +573,7 @@ function buildHeader(){
       <input id="user-name-input" value="${e(S.userName)}" oninput="setUserName(this.value)" title="Clique para editar seu nome/status" style="background:transparent;border:none;border-bottom:1px dashed rgba(255,0,68,.2);color:#39FF7A;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;text-align:right;width:220px;padding:2px 0;text-shadow:0 0 8px #39FF7A" onfocus="this.style.borderBottomColor='#FF0044'" onblur="this.style.borderBottomColor='rgba(255,0,68,.2)'">
     </div>
     <div style="display:flex;align-items:center;gap:8px">
-      <input type="date" title="Data do edital / prova" value="${e(S.examDate)}" onchange="setExamDate(this.value)" style="padding:4px 8px;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.1em;color-scheme:dark;background:transparent;border:1px solid rgba(255,0,68,.2);width:130px">
+      <input type="date" title="Data da prova" value="${e(S.examDate)}" onchange="setExamDate(this.value)" style="padding:4px 8px;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.1em;color-scheme:dark;background:transparent;border:1px solid rgba(255,0,68,.2);width:130px">
       <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:${examColor};text-shadow:0 0 6px ${examColor};letter-spacing:.12em;white-space:nowrap">${examStr}</div>
     </div>
   </div>
@@ -547,7 +583,7 @@ function buildHeader(){
 function buildDashboard(c){
   const today=todayISO();
   const metrics=[
-    {l:'STREAK',val:c.streak,unit:'DIAS',sub:'consecutivos sem quebrar',color:'#FF0044',bar:Math.min(100,c.streak*4)+'%',note:'▲ ATIVO'},
+    {l:'STREAK',val:c.streak,unit:'DIAS',sub:'folgas planejadas não quebram',color:'#FF0044',bar:Math.min(100,c.streak*4)+'%',note:'▲ ATIVO'},
     {l:'DIAS DE ESTUDO',val:c.studyDays,unit:'',sub:'últimos 35 dias',color:'#B864E8',bar:Math.round(c.studyDays/35*100)+'%',note:c.studyDays+'/35'},
     {l:'SESSÕES',val:S.sessions.length,unit:'',sub:'blocos registrados',color:'#FF0044',bar:Math.min(100,S.sessions.length*1.6)+'%',note:'TOTAL'},
     {l:'XP',val:c.xp,unit:'PTS',sub:`${c.totalHours.toFixed(1)}h  LV ${c.level} → ${c.level*100}XP`,color:'#FFB400',bar:c.xpInLevel+'%',note:`LV ${c.level}`}
@@ -574,13 +610,15 @@ function buildDashboard(c){
   const wColor=wPct>=100?'#39FF7A':wPct>=60?'#FFB400':'#FF0044';
   let weekDotHtml='';
   c.weekDaysDots.forEach(d=>{
-    const color=d.isFuture?'#2A1F30':d.h>=DAILY_TARGET_H?'#39FF7A':d.h>0?'#FF0044':'#3A0820';
-    const glow=d.h>=DAILY_TARGET_H?'0 0 8px #39FF7A':d.h>0?'0 0 6px #FF0044':'none';
-    const border=d.isToday?`2px solid ${color}`:'none';
+    const met=d.h>0&&d.h>=d.target;
+    const rest=d.target===0&&d.h===0;
+    const color=met?'#39FF7A':d.h>0?'#FF0044':rest?'#1E1626':d.isFuture?'#2A1F30':'#3A0820';
+    const glow=met?'0 0 8px #39FF7A':d.h>0?'0 0 6px #FF0044':'none';
+    const border=d.isToday?`2px solid ${met||d.h>0?color:'#FF0044'}`:'none';
     weekDotHtml+=`<div style="text-align:center">
       <div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:${d.isFuture?'#9377A4':'#B080A0'};margin-bottom:4px">${d.dayLabel}</div>
       <div style="width:20px;height:20px;border-radius:50%;background:${color};box-shadow:${glow};margin:0 auto;border:${border}"></div>
-      <div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:${d.isFuture?'#9377A4':'#8B6F95'};margin-top:4px">${d.h>0?d.h.toFixed(1):'—'}</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:${d.isFuture?'#9377A4':'#8B6F95'};margin-top:4px">${d.h>0?fmtH(d.h):'—'}<span style="color:#6B5577">/${d.target>0?fmtH(d.target):'folga'}</span></div>
     </div>`;
   });
 
@@ -594,12 +632,12 @@ function buildDashboard(c){
 
   // Spaced review
   let spacedHtml=c.spaced.length===0
-    ?`<div style="padding:20px;text-align:center;border:1px dashed rgba(255,0,68,.15)"><div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8B6F95">// nenhum erro pendente neste ciclo</div><div style="font-size:11px;color:#B080A0;margin-top:6px">Nada a revisar de ${fmtLong(c.srDate)}.</div></div>`
+    ?`<div style="padding:20px;text-align:center;border:1px dashed rgba(255,0,68,.15)"><div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8B6F95">// nenhum erro pendente neste ciclo</div><div style="font-size:11px;color:#B080A0;margin-top:6px">Nada a revisar nas janelas D+1, D+7 e D+30.</div></div>`
     :'';
   c.spaced.forEach(item=>{
     spacedHtml+=`<div style="border:1px solid rgba(255,0,68,.2);background:rgba(255,0,68,.04);padding:12px;border-left:3px solid ${item.dc};margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
-        <span style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:12px;color:#FFE6EE">${e(item.discipline)}</span>
+        <span style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:12px;color:#FFE6EE"><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#FFB400;border:1px solid rgba(255,180,0,.4);padding:1px 5px;margin-right:6px">${item.stage}</span>${e(item.discipline)} <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8B6F95">${fmtShort(item.date)}</span></span>
         <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#FF0044">${item.errRate}% erro</span>
       </div>
       <div style="font-size:12px;color:#A98FB8;line-height:1.5">${e(item.notes)}</div>
@@ -613,7 +651,7 @@ function buildDashboard(c){
     sh+=`<div style="display:grid;grid-template-columns:210px 1fr 120px 100px;align-items:center;gap:16px">
       <div style="display:flex;align-items:center;gap:10px">
         <div style="width:5px;height:22px;background:${s.color};box-shadow:0 0 8px ${s.color}aa;flex-shrink:0"></div>
-        <div><div style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:13px;color:#FFE6EE">${e(s.name)}</div><div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8B6F95;letter-spacing:.1em;text-transform:uppercase">${s.sub}</div></div>
+        <div><div style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:13px;color:#FFE6EE">${e(s.name)}</div><div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8B6F95;letter-spacing:.1em;text-transform:uppercase">${e(s.sub)}</div></div>
       </div>
       <div style="position:relative;height:14px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);overflow:hidden">
         <div style="position:absolute;left:0;top:0;bottom:0;width:${s.barW};background:linear-gradient(90deg,${s.color}88,${s.color});box-shadow:0 0 12px ${s.color}cc"></div>
@@ -639,16 +677,16 @@ function buildDashboard(c){
   ${mh}
   <div style="${card('margin-bottom:18px')}">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-      <div>${sectionTag('// progresso da semana')}<h2 style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:16px;color:#FFE6EE">Semana atual — meta: ${WEEKLY_TARGET_H}h</h2></div>
+      <div>${sectionTag('// progresso da semana')}<h2 style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:16px;color:#FFE6EE">Semana atual: meta de ${fmtH(WEEKLY_TARGET_H)}h</h2></div>
       <div style="text-align:right">
-        <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px;color:${wColor};text-shadow:0 0 10px ${wColor}">${c.weekHours}h</div>
-        <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B080A0">${wPct}% da meta — ${c.weekDaysStudied} dias</div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px;color:${wColor};text-shadow:0 0 10px ${wColor}">${fmtH(c.weekHours)}h</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B080A0">${wPct}% da meta · ${c.weekDaysStudied} ${c.weekDaysStudied===1?'dia':'dias'}</div>
       </div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:12px">${weekDotHtml}</div>
     <div style="height:5px;background:rgba(255,0,68,.1);border-radius:3px;overflow:hidden"><div style="height:100%;width:${wPct}%;background:linear-gradient(90deg,${wColor}60,${wColor});box-shadow:0 0 8px ${wColor};border-radius:3px;transition:width .6s ease"></div></div>
     <div style="display:flex;gap:16px;margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:9px;color:#8B6F95">
-      <span>⬤ META DIÁRIA (${DAILY_TARGET_H}h) ATINGIDA</span><span style="color:#3A0820">⬤ ESTUDO SEM META</span><span style="color:#2A1F30">⬤ DIA FUTURO</span>
+      <span style="color:#39FF7A">⬤ META DO DIA ATINGIDA</span><span style="color:#FF0044">⬤ ABAIXO DA META</span><span style="color:#8A4A66">⬤ SEM ESTUDO</span><span style="color:#6B5577">⬤ FOLGA PLANEJADA</span>
     </div>
   </div>
   <div class="grid-2col" style="display:grid;grid-template-columns:1.4fr 1fr;gap:16px;margin-bottom:18px">
@@ -673,8 +711,8 @@ function buildDashboard(c){
         <div style="width:8px;height:8px;background:#FF0044;box-shadow:0 0 8px #FF0044;animation:pulseGlow 2s infinite"></div>
         ${sectionTag('// review queue')}
       </div>
-      <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:17px;color:#FFE6EE;margin-bottom:4px">Revisão Espaçada D-7</h2>
-      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B080A0;margin-bottom:14px">Erros de ${fmtLong(c.srDate)} aguardando reforço</div>
+      <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:17px;color:#FFE6EE;margin-bottom:4px">Revisão Espaçada</h2>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B080A0;margin-bottom:14px">Erros de 1, 7 e 30 dias atrás aguardando reforço</div>
       <div style="max-height:220px;overflow-y:auto">${spacedHtml}</div>
     </div>
   </div>
@@ -701,7 +739,7 @@ function buildSession(c){
     const active=f.block===b;
     const meta=BLOCK_META[b];
     return`<div style="flex:1;min-width:0">
-      <button class="chip-btn" onclick="setForm('block','${e(b)}')" title="${e(meta.hint)}" style="width:100%;padding:10px 6px;background:${active?'rgba(255,0,68,.18)':'transparent'};border:1px solid ${active?'#FF0044':'rgba(255,0,68,.12)'};color:${active?'#FFE6EE':'#A98FB8'};font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:10px;letter-spacing:.1em;text-transform:uppercase;${active?'box-shadow:0 0 10px rgba(255,0,68,.4)':''}">
+      <button class="chip-btn" onclick="setForm('block','${jsq(b)}')" title="${e(meta.hint)}" style="width:100%;padding:10px 6px;background:${active?'rgba(255,0,68,.18)':'transparent'};border:1px solid ${active?'#FF0044':'rgba(255,0,68,.12)'};color:${active?'#FFE6EE':'#A98FB8'};font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:10px;letter-spacing:.1em;text-transform:uppercase;${active?'box-shadow:0 0 10px rgba(255,0,68,.4)':''}">
         <div>${b}</div>
         <div style="font-family:'JetBrains Mono',monospace;font-size:8px;font-weight:400;color:${active?'#FF8899':'#8B6F95'};margin-top:3px;letter-spacing:.06em;text-transform:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${meta.sub}</div>
       </button>
@@ -710,7 +748,7 @@ function buildSession(c){
 
   let discChips=getDiscs().map(d=>{
     const active=f.discipline===d.name;
-    return`<button class="chip-btn" onclick="setForm('discipline','${e(d.name)}')" style="padding:10px 8px;background:${active?'rgba(255,0,68,.12)':'rgba(6,0,15,.4)'};border:1px solid ${active?d.color:'rgba(255,255,255,.05)'};color:${active?'#FFE6EE':'#A98FB8'};font-family:'Space Grotesk',sans-serif;font-weight:500;font-size:11px;letter-spacing:.03em;cursor:pointer;text-align:left;display:flex;align-items:center;gap:8px;${active?`box-shadow:0 0 10px ${d.color}55`:''}"><span style="width:6px;height:6px;flex-shrink:0;background:${d.color};box-shadow:0 0 5px ${d.color}"></span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(d.name)}</span></button>`;
+    return`<button class="chip-btn" onclick="setForm('discipline','${jsq(d.name)}')" style="padding:10px 8px;background:${active?'rgba(255,0,68,.12)':'rgba(6,0,15,.4)'};border:1px solid ${active?d.color:'rgba(255,255,255,.05)'};color:${active?'#FFE6EE':'#A98FB8'};font-family:'Space Grotesk',sans-serif;font-weight:500;font-size:11px;letter-spacing:.03em;cursor:pointer;text-align:left;display:flex;align-items:center;gap:8px;${active?`box-shadow:0 0 10px ${d.color}55`:''}"><span style="width:6px;height:6px;flex-shrink:0;background:${d.color};box-shadow:0 0 5px ${d.color}"></span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e(d.name)}</span></button>`;
   }).join('');
 
   const fh=parseFloat(f.hours);
@@ -822,7 +860,7 @@ function buildHistory(c){
   const filterOpts=[{name:'ALL',short:'TODAS'},...getDiscs().map(d=>({name:d.name,short:d.short,color:d.color}))];
   let chips=filterOpts.map(f=>{
     const active=S.filter===f.name;
-    return`<button onclick="setFilter('${e(f.name)}')" style="padding:5px 10px;background:${active?'rgba(255,0,68,.18)':'transparent'};border:1px solid ${active?'#FF0044':'transparent'};color:${active?'#FFE6EE':'#B080A0'};font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;${active?'box-shadow:0 0 8px rgba(255,0,68,.35)':''}">${f.short}</button>`;
+    return`<button onclick="setFilter('${jsq(f.name)}')" style="padding:5px 10px;background:${active?'rgba(255,0,68,.18)':'transparent'};border:1px solid ${active?'#FF0044':'transparent'};color:${active?'#FFE6EE':'#B080A0'};font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;${active?'box-shadow:0 0 8px rgba(255,0,68,.35)':''}">${f.short}</button>`;
   }).join('');
 
   let rows='';
@@ -865,15 +903,16 @@ function buildEvolucao(c){
     return`<button onclick="setWeekFilter('${o.k}')" style="padding:6px 12px;background:${active?'rgba(255,0,68,.18)':'transparent'};border:1px solid ${active?'#FF0044':'rgba(255,0,68,.12)'};color:${active?'#FFE6EE':'#B080A0'};font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;${active?'box-shadow:0 0 8px rgba(255,0,68,.3)':''}">${o.l}</button>`;
   }).join('');
 
-  let dbars=`<div style="display:grid;grid-template-columns:repeat(8,1fr);gap:12px;height:220px;align-items:flex-end;padding:0 4px">`;
+  const nCols=Math.max(1,c.discBars.length);
+  let dbars=`<div style="display:grid;grid-template-columns:repeat(${nCols},1fr);gap:12px;height:220px;align-items:flex-end;padding:0 4px">`;
   c.discBars.forEach(b=>{
     dbars+=`<div style="display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end;gap:5px">
       <div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:11px;color:${b.color};text-shadow:0 0 6px ${b.color}aa">${b.accDisplay}</div>
       <div style="width:100%;max-width:44px;min-height:4px;height:${b.h};background:linear-gradient(180deg,${b.color},${b.color}44);box-shadow:0 0 14px ${b.color}66"></div>
     </div>`;
   });
-  dbars+=`</div><div style="display:grid;grid-template-columns:repeat(8,1fr);gap:12px;margin-top:8px;padding:0 4px">`;
-  c.discBars.forEach(b=>{dbars+=`<div style="text-align:center;font-family:'JetBrains Mono',monospace;font-size:9px;color:#B080A0;letter-spacing:.06em;text-transform:uppercase;line-height:1.3">${b.short}</div>`;});
+  dbars+=`</div><div style="display:grid;grid-template-columns:repeat(${nCols},1fr);gap:12px;margin-top:8px;padding:0 4px">`;
+  c.discBars.forEach(b=>{dbars+=`<div style="text-align:center;font-family:'JetBrains Mono',monospace;font-size:9px;color:#B080A0;letter-spacing:.06em;text-transform:uppercase;line-height:1.3">${e(b.short)}</div>`;});
   dbars+='</div>';
 
   let dailyBars=`<div style="display:grid;grid-template-columns:repeat(14,1fr);gap:6px;height:180px;align-items:flex-end">`;
@@ -919,7 +958,7 @@ function buildEvolucao(c){
   </div>
   <div class="grid-2col" style="display:grid;grid-template-columns:1.3fr 1fr;gap:16px;margin-bottom:16px">
     <div style="${card()}">
-      <div style="margin-bottom:20px">${sectionTag('// last 14 days')}<h2 style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:16px;color:#FFE6EE">Horas diárias <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B080A0">meta: ${DAILY_TARGET_H}h/dia = verde</span></h2></div>
+      <div style="margin-bottom:20px">${sectionTag('// last 14 days')}<h2 style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:16px;color:#FFE6EE">Horas diárias <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B080A0">verde = meta do dia atingida</span></h2></div>
       ${dailyBars}
     </div>
     <div style="${card()}">
@@ -955,10 +994,10 @@ function buildEvolucao(c){
   </div>
   <div class="grid-2col" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
     <div style="${card()}">
-      <div style="margin-bottom:18px">${sectionTag('// forecast')}<h2 style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:16px;color:#FFE6EE">Projeção até o Edital</h2></div>
+      <div style="margin-bottom:18px">${sectionTag('// forecast')}<h2 style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:16px;color:#FFE6EE">Projeção até a Prova</h2></div>
       ${c.forecast.dExam===null?
         `<div style="padding:24px;text-align:center;border:1px dashed rgba(255,0,68,.2)">
-          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#B080A0;letter-spacing:.1em">// configure a data do edital no header</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#B080A0;letter-spacing:.1em">// configure a data da prova no cabeçalho</div>
           <div style="font-size:12px;color:#8B6F95;margin-top:8px">A projeção precisa de uma data-alvo para calcular.</div>
         </div>`:
         `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
@@ -967,8 +1006,8 @@ function buildEvolucao(c){
             <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:28px;color:#FF0044;text-shadow:0 0 14px rgba(255,0,68,.6)">${c.forecast.dExam}</div>
           </div>
           <div style="background:rgba(57,255,122,.04);border:1px solid rgba(57,255,122,.18);padding:14px;text-align:center">
-            <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B080A0;letter-spacing:.18em;margin-bottom:6px">MÉDIA DIÁRIA</div>
-            <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:28px;color:#39FF7A;text-shadow:0 0 14px rgba(57,255,122,.5)">${c.forecast.avgDailyH}h</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B080A0;letter-spacing:.18em;margin-bottom:6px">MÉDIA SEMANAL (14D)</div>
+            <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:28px;color:#39FF7A;text-shadow:0 0 14px rgba(57,255,122,.5)">${fmtH(c.forecast.avgWeeklyH)}h</div>
           </div>
         </div>
         <div style="border:1px solid rgba(255,0,68,.12);background:rgba(6,0,15,.4);padding:16px">
@@ -984,9 +1023,9 @@ function buildEvolucao(c){
             </div>
           </div>
           <div style="margin-top:14px;padding-top:12px;border-top:1px dashed rgba(255,0,68,.15);font-size:11px;color:#B080A0;line-height:1.6">
-            ${c.forecast.avgDailyH<DAILY_TARGET_H?
-              `<span style="color:#FFB400">⚠</span> Sua média diária (${c.forecast.avgDailyH}h) está abaixo da meta de ${DAILY_TARGET_H}h. Com a meta atingida, seriam <span style="color:#FFE6EE;font-weight:600">${Math.round(DAILY_TARGET_H*c.forecast.dExam)}h</span> até o edital.`:
-              `<span style="color:#39FF7A">✓</span> Sua média diária está na meta ou acima. Continue no ritmo.`
+            ${c.forecast.avgWeeklyH<WEEKLY_TARGET_H?
+              `<span style="color:#FFB400">⚠</span> Sua média (${fmtH(c.forecast.avgWeeklyH)}h por semana) está abaixo da meta de ${fmtH(WEEKLY_TARGET_H)}h. Com a meta atingida, seriam <span style="color:#FFE6EE;font-weight:600">${c.forecast.targetH}h</span> até a prova.`:
+              `<span style="color:#39FF7A">✓</span> Sua média semanal está na meta ou acima. Continue no ritmo.`
             }
           </div>
         </div>`
@@ -1209,7 +1248,7 @@ create policy "anon_all" on sessions
 
 function buildFooter(){
   return`<div style="margin-top:40px;padding-top:16px;padding-bottom:80px;border-top:1px dashed rgba(255,0,68,.12);display:flex;justify-content:space-between;align-items:center;font-family:'JetBrains Mono',monospace;font-size:10px;color:#8B6F95;letter-spacing:.15em;flex-wrap:wrap;gap:10px">
-  <span>STUDY_TRACKER // ${S.sessions.length} sessões registradas</span>
+  <span>STUDY_TRACKER // ${S.sessions.length} sessões registradas${S.pending.length>0&&S.sbUrl?` <span style="color:#FFB400" title="${e(S.sbError||'aguardando conexão')}">· ⟳ ${S.pending.length} ${S.pending.length===1?'alteração pendente':'alterações pendentes'} de envio</span>`:''}</span>
   <div style="display:flex;gap:8px">
     <button onclick="setView('setup')" style="padding:5px 12px;background:${sbOk()?'rgba(57,255,122,.08)':'transparent'};border:1px solid ${sbOk()?'rgba(57,255,122,.4)':'rgba(255,0,68,.2)'};color:${sbOk()?'#39FF7A':'#B080A0'};font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase" title="${sbOk()?'Supabase conectado — clique para gerenciar':'Configurar armazenamento em nuvem'}">${sbOk()?'☁ NUVEM ATIVA':'☁ CONFIGURAR NUVEM'}</button>
     <button onclick="importData()" style="padding:5px 12px;background:transparent;border:1px solid rgba(255,0,68,.2);color:#B080A0;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase">↑ IMPORTAR</button>
@@ -1308,9 +1347,9 @@ function saveSession(){
   const autoErr=(questions>0&&correct===questions)?'Sem erros':(questions>0?(f.errorType||''):'');const sess={id:Date.now(),date:f.date,block:f.block,discipline:f.discipline,hours,questions,correct,errorType:autoErr,notes:f.notes||''};
   S.sessions=[sess,...S.sessions];
   S.form={date:todayISO(),block:f.block,discipline:f.discipline||getDiscs()[0]?.name||'',hours:'',questions:'',correct:'',errorType:'',notes:''};
-  if(!sbOk())saveLocal();
+  saveLocal();
   flash('▲ SESSÃO REGISTRADA +'+Math.round(hours*10)+' XP');
-  if(sbOk())sbReq('sessions',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify(sToDB(sess))}).catch(err=>flash('⚠ Supabase: '+err.message));
+  queueOp({op:'upsert',s:sess});
 }
 
 function editSession(id){
@@ -1330,16 +1369,16 @@ function updateSession(){
   const autoErrU=(questions>0&&correct===questions)?'Sem erros':(questions>0?(f.errorType||''):'');const updated={...existing,date:f.date,block:f.block,discipline:f.discipline,hours,questions,correct,errorType:autoErrU,notes:f.notes||''};
   S.sessions=S.sessions.map(s=>s.id===eid?updated:s);
   S.editId=null;
-  S.form={date:todayISO(),block:'Bloco A',discipline:S.form.discipline||getDiscs()[0]?.name||'',hours:'',questions:'',correct:'',errorType:'',notes:''};
-  if(!sbOk())saveLocal();
+  S.form={date:todayISO(),block:defaultBlock(),discipline:S.form.discipline||getDiscs()[0]?.name||'',hours:'',questions:'',correct:'',errorType:'',notes:''};
+  saveLocal();
   S.view='history';flash('▲ SESSÃO ATUALIZADA');
-  if(sbOk())sbReq('sessions?id=eq.'+eid,{method:'PATCH',body:JSON.stringify(sToDB(updated))}).catch(err=>flash('⚠ Supabase: '+err.message));
+  queueOp({op:'upsert',s:updated});
 }
 
 function cancelEdit(){S.editId=null;resetForm();S.view='history';render()}
 function setUserName(v){S.userName=v;saveLocal();}
-function resetForm(){S.form={date:todayISO(),block:'Bloco A',discipline:S.form.discipline,hours:'',questions:'',correct:'',errorType:'',notes:''};S.flash=false;render()}
-function deleteSession(id){if(!confirm('Excluir esta sessão?'))return;S.sessions=S.sessions.filter(s=>s.id!==id);if(!sbOk())saveLocal();render();if(sbOk())sbReq('sessions?id=eq.'+id,{method:'DELETE'}).catch(err=>flash('⚠ Supabase: '+err.message));}
+function resetForm(){S.form={date:todayISO(),block:defaultBlock(),discipline:S.form.discipline,hours:'',questions:'',correct:'',errorType:'',notes:''};S.flash=false;render()}
+function deleteSession(id){if(!confirm('Excluir esta sessão?'))return;S.sessions=S.sessions.filter(s=>s.id!==id);saveLocal();render();queueOp({op:'delete',id});}
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 load();if(S.sbStatus!=='connecting')render();

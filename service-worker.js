@@ -1,5 +1,5 @@
-// Study Tracker PWA — Service Worker v4
-const VERSION    = 'st-v4-tier2';
+// Study Tracker PWA: Service Worker v5
+const VERSION    = 'st-v5-rotina';
 const CACHE_NAME = 'study-tracker-' + VERSION;
 const APP_FILES  = [
   './',
@@ -41,10 +41,12 @@ self.addEventListener('message', e => {
 self.addEventListener('fetch', e => {
   const url = e.request.url;
 
-  // Supabase — sempre network, nunca cache
+  // Supabase: sempre rede, nunca cache. Sem conexão, devolve erro 503 para o app
+  // manter a alteração na fila (antes devolvia 200 falso e a sessão se perdia).
   if (url.includes('supabase.co')) {
     e.respondWith(
-      fetch(e.request).catch(() => new Response('{}', {
+      fetch(e.request).catch(() => new Response('{"message":"offline"}', {
+        status: 503,
         headers: { 'Content-Type': 'application/json' }
       }))
     );
