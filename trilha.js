@@ -89,17 +89,17 @@ function trailItemHtml(i,opts={}){
   const done=trailDone(i.id);
   const t=S.trail[i.id]||{};
   const late=i.date&&i.date<todayISO()&&!done;
-  const badge=i.date?`<span style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.1em;color:${late?'#FF4466':'#B080A0'};border:1px solid ${late?'rgba(255,68,102,.4)':'rgba(180,140,200,.2)'};padding:2px 6px;white-space:nowrap">${fmtShort(i.date)}${i.block?' · '+e(i.block).toUpperCase():''}${late?' · ATRASADO':''}</span>`:'';
-  const nota=i.nota&&done?`<label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#B080A0;letter-spacing:.1em">NOTA (0 A 11)<input type="text" inputmode="decimal" value="${e(t.n||'')}" onchange="setTrailNota('${jsq(i.id)}',this.value)" style="width:56px;padding:4px 6px;font-size:12px;font-family:'JetBrains Mono',monospace"></label>`:'';
-  const logBtn=opts.log&&!done?`<button onclick="logFromTrail('${jsq(i.id)}')" title="Abrir Nova Sessão já preenchida com este item" style="margin-top:8px;padding:4px 10px;background:transparent;border:1px solid rgba(255,0,68,.3);color:#A98FB8;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase">+ registrar sessão</button>`:'';
+  const badge=i.date?`<span style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;color:${late?'#FF4466':'#B080A0'};border:1px solid ${late?'rgba(255,68,102,.4)':'rgba(180,140,200,.2)'};padding:2px 6px;white-space:nowrap">${fmtShort(i.date)}${i.block?' · '+e(i.block).toUpperCase():''}${late?' · ATRASADO':''}</span>`:'';
+  const nota=i.nota&&done?`<label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#B080A0;letter-spacing:.1em">NOTA (0 A 11)<input type="text" inputmode="decimal" value="${e(t.n||'')}" onchange="setTrailNota('${jsq(i.id)}',this.value)" style="width:56px;padding:4px 6px;font-size:12px;font-family:'JetBrains Mono',monospace"></label>`:'';
+  const logBtn=opts.log&&!done?`<button onclick="logFromTrail('${jsq(i.id)}')" title="Abrir Nova Sessão já preenchida com este item" style="margin-top:8px;padding:4px 10px;background:transparent;border:1px solid rgba(255,0,68,.3);color:#A98FB8;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase">+ registrar sessão</button>`:'';
   return`<div class="tt-row" style="display:flex;gap:12px;align-items:flex-start;padding:10px 6px;border-bottom:1px solid rgba(255,0,68,.07)">
     <input type="checkbox" ${done?'checked':''} onchange="toggleTrail('${jsq(i.id)}')" aria-label="Concluído" style="width:18px;height:18px;margin-top:2px;accent-color:#FF0044;flex-shrink:0;cursor:pointer">
     <div style="flex:1;min-width:0">
       <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
-        <div style="flex:1;min-width:200px;font-size:13px;line-height:1.5;color:${done?'#8B6F95':'#FFE6EE'};${done?'text-decoration:line-through;text-decoration-color:rgba(255,0,68,.5)':''}">${e(i.label)}</div>${badge}
+        <div style="flex:1;min-width:200px;font-size:13px;line-height:1.5;color:${done?'#A994B5':'#FFE6EE'};${done?'text-decoration:line-through;text-decoration-color:rgba(255,0,68,.5)':''}">${e(i.label)}</div>${badge}
       </div>
       ${i.detail&&!done?`<div style="font-size:11.5px;color:#A98FB8;line-height:1.55;margin-top:3px">${e(i.detail)}</div>`:''}
-      ${done&&t.d?`<div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#39FF7A;letter-spacing:.1em;margin-top:3px">✓ ${fmtShort(t.d)}</div>`:''}
+      ${done&&t.d?`<div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#39FF7A;letter-spacing:.1em;margin-top:3px">✓ ${fmtShort(t.d)}</div>`:''}
       ${nota}${logBtn}
     </div>
   </div>`;
@@ -114,14 +114,14 @@ function buildTrilha(){
   const media=notas.length?(notas.reduce((a,b)=>a+b,0)/notas.length).toFixed(1).replace('.',','):'—';
   const late=trailLate();const today=trailToday();const next=trailNext();
   const metric=(l,val,sub,color,pct)=>`<div style="border:1px solid ${color}38;background:linear-gradient(135deg,rgba(20,6,30,.85),rgba(40,8,30,.65));padding:18px">
-      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.2em;color:#B080A0;text-transform:uppercase;margin-bottom:10px">${l}</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.2em;color:#B080A0;text-transform:uppercase;margin-bottom:10px">${l}</div>
       <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:34px;color:#FFE6EE;line-height:1;text-shadow:0 0 18px ${color}99">${val}</div>
       <div style="margin-top:12px">${trailBar(pct,color)}</div>
-      <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8B6F95;margin-top:8px">${sub}</div></div>`;
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#A994B5;margin-top:8px">${sub}</div></div>`;
   let h=`<div class="view-content">
   <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px;padding-bottom:16px;border-bottom:1px dashed rgba(255,0,68,.2);gap:16px;flex-wrap:wrap">
     <div>${sectionTag('// trilha de estudo')}<h1 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:24px;color:#FFE6EE">Trilha: Concurso ANPD</h1>
-    <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8B6F95;letter-spacing:.1em;margin-top:4px">conteúdo da trilha em ${fmtShort(TRILHA_GERADA_EM)} · <a href="${TRILHA_URL}" target="_blank" rel="noopener" style="color:#B864E8">abrir o documento completo ↗</a></div></div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#A994B5;letter-spacing:.1em;margin-top:4px">conteúdo da trilha em ${fmtShort(TRILHA_GERADA_EM)} · <a href="${TRILHA_URL}" target="_blank" rel="noopener" style="color:#B864E8">abrir o documento completo ↗</a></div></div>
     <div style="display:flex;gap:6px">${['pendentes','todos'].map(f=>`<button onclick="setTrailFilter('${f}')" style="padding:7px 14px;${navStyle(S.trailFilter===f)};font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:10px;letter-spacing:.16em;text-transform:uppercase">${f==='pendentes'?'Só pendentes':'Mostrar tudo'}</button>`).join('')}</div>
   </div>
   ${S.sbUrl&&S.trailCloud==='missing'?`<div style="${card('margin-bottom:16px;border-color:rgba(255,180,0,.4)')}"><div style="font-size:13px;color:#FFB400;margin-bottom:8px">As marcações da trilha estão salvas só neste aparelho. Para sincronizar com a nuvem, rode este SQL uma vez no SQL Editor do Supabase e recarregue a página:</div><div style="background:#06000F;border:1px solid rgba(255,0,68,.2);padding:12px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#A98FB8;white-space:pre;overflow-x:auto">${e(TRAIL_SQL)}</div></div>`:''}
@@ -135,8 +135,8 @@ function buildTrilha(){
   const dow=new Date().getDay();
   const geral=(dow>=1&&dow<=5)?`<div style="font-size:12px;color:#A98FB8;line-height:1.6;padding:8px 6px">${dow===1||dow===5?'Manhã (6h às 7h45): matérias gerais, direito administrativo e constitucional (antecipação do Módulo 2).':'Manhã, 6h às 6h45: matérias gerais (antecipação do Módulo 2); depois, a linha "Manhã" abaixo.'}</div>`:'';
   h+=`<div class="grid-2col" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px">
-    <div style="${card()}">${sectionTag('// hoje · '+fmtShort(todayISO()))}${geral}${today.length?today.map(i=>trailItemHtml(i,{log:true})).join(''):`<div style="font-size:13px;color:#8B6F95;padding:8px 6px">Nenhum item com data para hoje na trilha.</div>`}</div>
-    <div style="${card(late.length?'border-color:rgba(255,68,102,.35)':'')}">${sectionTag('// atrasados')}${late.length?late.slice(0,12).map(i=>trailItemHtml(i,{log:true})).join('')+(late.length>12?`<div style="font-size:11px;color:#8B6F95;padding:8px 6px">e mais ${late.length-12} na seção do roteiro</div>`:''):`<div style="font-size:13px;color:#39FF7A;padding:8px 6px">Nada atrasado.</div>`}</div>
+    <div style="${card()}">${sectionTag('// hoje · '+fmtShort(todayISO()))}${geral}${today.length?today.map(i=>trailItemHtml(i,{log:true})).join(''):`<div style="font-size:13px;color:#A994B5;padding:8px 6px">Nenhum item com data para hoje na trilha.</div>`}</div>
+    <div style="${card(late.length?'border-color:rgba(255,68,102,.35)':'')}">${sectionTag('// atrasados')}${late.length?late.slice(0,12).map(i=>trailItemHtml(i,{log:true})).join('')+(late.length>12?`<div style="font-size:11px;color:#A994B5;padding:8px 6px">e mais ${late.length-12} na seção do roteiro</div>`:''):`<div style="font-size:13px;color:#39FF7A;padding:8px 6px">Nada atrasado.</div>`}</div>
   </div>`;
   // Seções
   data.forEach(s=>{
@@ -157,7 +157,7 @@ function buildTrilha(){
         const items=S.trailFilter==='pendentes'?g.items.filter(i=>!trailDone(i.id)):g.items;
         if(!items.length)return;
         shown+=items.length;
-        if(g.title)h+=`<div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.18em;color:#B864E8;text-transform:uppercase;margin:14px 0 4px">${e(g.title)}</div>`;
+        if(g.title)h+=`<div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;color:#B864E8;text-transform:uppercase;margin:14px 0 4px">${e(g.title)}</div>`;
         h+=items.map(i=>trailItemHtml(i,{log:!!i.date})).join('');
       });
       if(!shown)h+=`<div style="font-size:13px;color:#39FF7A;padding:10px 6px">Tudo concluído nesta seção. Use "Mostrar tudo" para rever.</div>`;
@@ -165,7 +165,7 @@ function buildTrilha(){
     }
     h+=`</div>`;
   });
-  h+=`<div style="font-size:11px;color:#8B6F95;line-height:1.6;margin-top:10px">As explicações, tabelas e o caderno de prazos continuam no documento da trilha. Aqui ficam só os itens para marcar. Quando a trilha mudar, peça ao Claude para regenerar a lista: o que já foi marcado é mantido.</div></div>`;
+  h+=`<div style="font-size:11px;color:#A994B5;line-height:1.6;margin-top:10px">As explicações, tabelas e o caderno de prazos continuam no documento da trilha. Aqui ficam só os itens para marcar. Quando a trilha mudar, peça ao Claude para regenerar a lista: o que já foi marcado é mantido.</div></div>`;
   return h;
 }
 function buildTrailDashCard(){
@@ -174,6 +174,6 @@ function buildTrailDashCard(){
   return`<button onclick="setView('trilha')" style="${card('margin-bottom:18px;width:100%;text-align:left;display:flex;gap:20px;align-items:center;flex-wrap:wrap')}">
     <div style="flex:1;min-width:220px">${sectionTag('// trilha de estudo')}<div style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:16px;color:#FFE6EE;margin-bottom:10px">${ov.pct}% concluído · ${ov.done} de ${ov.total} itens</div>${trailBar(ov.pct,'#FF0044')}</div>
     <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#A98FB8;letter-spacing:.08em;line-height:1.8">HOJE: ${today.length?pend+' pendente'+(pend===1?'':'s')+' de '+today.length:'sem itens datados'}<br><span style="color:${late?'#FF4466':'#39FF7A'}">${late?late+' atrasado'+(late===1?'':'s'):'nada atrasado'}</span></div>
-    <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#FF0044;letter-spacing:.15em">ABRIR TRILHA ▸</div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#FF0044;letter-spacing:.15em">ABRIR TRILHA ▸</div>
   </button>`;
 }
