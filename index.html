@@ -66,6 +66,8 @@ select{appearance:none;cursor:pointer}
 
 <div id="app" style="position:relative;z-index:1;max-width:1280px;margin:0 auto;padding:28px 24px 80px"></div>
 
+<script src="trilha-data.js"></script>
+<script src="trilha.js"></script>
 <script>
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const KEY='study-tracker-concursos-v2';
@@ -156,6 +158,7 @@ let S = {
   sbKey:localStorage.getItem('st-sb-key')||'',
   sbStatus:'init',sbError:'',loading:false,
   pending:[],syncing:false,
+  trail:{},trailOpen:{roteiro:true},trailFilter:'pendentes',trailCloud:'',
   form:{
     date: todayISO(), block: defaultBlock(), discipline: 'Direito Constitucional',
     hours: '', questions: '', correct: '', errorType: '', notes: ''
@@ -210,7 +213,7 @@ function thisWeekRange(){
 // ─── STORAGE ──────────────────────────────────────────────────────────────────
 const PENDING_KEY=KEY+'-pending';
 function saveLocal(){
-  try{localStorage.setItem(KEY,JSON.stringify({sessions:S.sessions,examDate:S.examDate,userName:S.userName,examName:S.examName,customDiscs:S.customDiscs,setupDone:S.setupDone}))}catch(_){}
+  try{localStorage.setItem(KEY,JSON.stringify({sessions:S.sessions,examDate:S.examDate,userName:S.userName,examName:S.examName,customDiscs:S.customDiscs,setupDone:S.setupDone,trail:S.trail}))}catch(_){}
 }
 function savePending(){try{localStorage.setItem(PENDING_KEY,JSON.stringify(S.pending))}catch(_){}}
 function load(){
@@ -227,6 +230,7 @@ function load(){
       if(Array.isArray(p.customDiscs)&&p.customDiscs.length>0)S.customDiscs=p.customDiscs;
       if(p.setupDone)S.setupDone=true;
       if(p.userName)S.userName=p.userName;
+      if(p.trail&&typeof p.trail==='object')S.trail=p.trail;
     }}
   }catch(_){}
   try{const pr=JSON.parse(localStorage.getItem(PENDING_KEY)||'[]');if(Array.isArray(pr))S.pending=pr;}catch(_){}
@@ -244,7 +248,7 @@ function clearAll(){
   saveLocal();queueOp({op:'deleteAll'});render();
 }
 function exportData(){
-  const data=JSON.stringify({sessions:S.sessions,examDate:S.examDate,examName:S.examName,userName:S.userName,customDiscs:S.customDiscs,exportedAt:new Date().toISOString()},null,2);
+  const data=JSON.stringify({sessions:S.sessions,examDate:S.examDate,examName:S.examName,userName:S.userName,customDiscs:S.customDiscs,trail:S.trail,exportedAt:new Date().toISOString()},null,2);
   const blob=new Blob([data],{type:'application/json'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
@@ -267,8 +271,9 @@ function importData(){
         if(p.examName)S.examName=p.examName;
         if(p.userName)S.userName=p.userName;
         if(Array.isArray(p.customDiscs))S.customDiscs=p.customDiscs;
+        if(p.trail&&typeof p.trail==='object')S.trail=p.trail;
         saveLocal();
-        S.pending=[{op:'deleteAll'},...S.sessions.map(s=>({op:'upsert',s}))];
+        S.pending=[{op:'deleteAll'},...S.sessions.map(s=>({op:'upsert',s})),...Object.entries(S.trail).map(([id,v])=>({op:'trailUpsert',id,v}))];
         savePending();flushPending();
         render();flash('▲ DADOS IMPORTADOS COM SUCESSO');
       }catch(err){alert('Erro ao importar: '+err.message);}
@@ -305,10 +310,15 @@ async function flushPending(){
         await sbReq('sessions?id=eq.'+op.id,{method:'DELETE'});
       }else if(op.op==='deleteAll'){
         await sbReq('sessions?id=gt.0',{method:'DELETE'});
+      }else if(op.op==='trailUpsert'){
+        // Sem a tabela da trilha no Supabase, a marcação fica só local e a fila segue (não trava as sessões)
+        try{await sbReq('trail_progress',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(trailToDB(op.id,op.v))});}
+        catch(err){if(trailMissingTable(err))S.trailCloud='missing';else throw err;}
       }
       S.pending.shift();savePending();
     }
     if(S.sbStatus==='error'){S.sbStatus='connected';S.sbError='';}
+    if(S.sbError==='alterações pendentes de envio')S.sbError='';
   }catch(err){
     S.sbError=err.message;
   }finally{
@@ -329,6 +339,7 @@ async function connectSb(){
     }
     S.sessions=[...byId.values()].sort((a,b)=>b.id-a.id);
     saveLocal();
+    await trailPull();
     S.sbStatus='connected';S.sbError=S.pending.length>0?'alterações pendentes de envio':'';
     if(S.view==='setup')S.view='dashboard';
   }catch(err){
@@ -571,9 +582,9 @@ function buildHeader(){
       <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B080A0;letter-spacing:.25em;text-transform:uppercase;margin-top:2px">// ${S.examName||'study tracker'}</div>
     </div>
   </div>
-  <nav style="display:flex;gap:6px;padding:5px;border:1px solid rgba(255,0,68,.18);background:rgba(15,6,23,.65)">
-    ${['dashboard','session','history','progress'].map((k,i)=>{
-      const labels=['Dashboard','Nova Sessão','Histórico','Evolução'];
+  <nav style="display:flex;gap:6px;padding:5px;border:1px solid rgba(255,0,68,.18);background:rgba(15,6,23,.65);flex-wrap:wrap">
+    ${['dashboard','trilha','session','history','progress'].map((k,i)=>{
+      const labels=['Dashboard','Trilha','Nova Sessão','Histórico','Evolução'];
       return`<button class="nav-btn" onclick="setView('${k}')" style="padding:9px 16px;${navStyle(v===k)};font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:11px;letter-spacing:.18em;text-transform:uppercase">${labels[i]}</button>`;
     }).join('')}
   </nav>
@@ -684,6 +695,7 @@ function buildDashboard(c){
       <div id="motiv-phrase" style="font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:500;color:#FFE6EE;line-height:1.5;transition:opacity .6s ease">${e(PHRASES[S.phraseIdx])}</div>
     </div>
   </div>
+  ${buildTrailDashCard()}
   ${mh}
   <div style="${card('margin-bottom:18px')}">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
@@ -1209,7 +1221,10 @@ create table if not exists sessions (
 );
 alter table sessions enable row level security;
 create policy "anon_all" on sessions
-  for all to anon using (true) with check (true);`;
+  for all to anon using (true) with check (true);
+
+-- Trilha de estudo (marcações sincronizadas):
+${TRAIL_SQL}`;
 
   const sbInfo={
     'init':     {dot:'#8B6F95',label:'inicializando'},
@@ -1285,6 +1300,7 @@ function render(){
   else if(S.view==='dashboard')vHtml=buildDashboard(c);
   else if(S.view==='session')vHtml=buildSession(c);
   else if(S.view==='history')vHtml=buildHistory(c);
+  else if(S.view==='trilha')vHtml=buildTrilha();
   else vHtml=buildEvolucao(c);
   const isOnboarding = !S.setupDone && S.sessions.length===0 && S.view!=='setup';
   const headerHtml = isOnboarding ? '' : buildHeader();

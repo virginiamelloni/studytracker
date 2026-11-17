@@ -1,10 +1,12 @@
 // Study Tracker PWA: Service Worker v5
-const VERSION    = 'st-v8-data-prova';
+const VERSION    = 'st-v9-trilha';
 const CACHE_NAME = 'study-tracker-' + VERSION;
 const APP_FILES  = [
   './',
   './index.html',
   './manifest.json',
+  './trilha-data.js',
+  './trilha.js',
   './icon-192.png',
   './icon-512.png',
 ];
