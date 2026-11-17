@@ -97,21 +97,23 @@ function getDiscs(){
 
 // Blocos espelham a rotina do Google Calendar. Sessões antigas (Bloco A/B/C, Extra) continuam legíveis.
 const BLOCK_META = {
-  'Manhã':    {sub:'1h · 6h45',            hint:'Estudo profundo: teoria e questões do foco principal'},
-  'Almoço':   {sub:'30 min',               hint:'Conteúdo curto: vídeos e leituras da trilha'},
+  'Manhã':    {sub:'1h45 · 6h',            hint:'Estudo profundo: teoria pesada (até o edital, matérias gerais em rodízio)'},
+  'Almoço':   {sub:'30 min',               hint:'Revisão rápida: fila do Anki e pegadinhas recorrentes'},
   'Noite':    {sub:'1h · 19h',             hint:'Revisão e questões do conteúdo estudado de manhã'},
-  'Sábado':   {sub:'3h · 2 ciclos',        hint:'Questões ou simulado no 1º ciclo; teoria e revisão de erros no 2º'},
+  'Sábado':   {sub:'3h · 14h',             hint:'Discursiva e correção; depois meia prova ou português e inglês'},
+  'Domingo':  {sub:'2h · 9h30',            hint:'Refazer erradas da semana e itens da disciplina mais fraca'},
   'Revisão':  {sub:'Revisão espaçada',     hint:'Revisão D+1, D+7 ou D+30 dos erros registrados'},
   'Simulado': {sub:'Prova completa',       hint:'Simulado cronometrado com todas as disciplinas'},
   'Outros':   {sub:'Personalizável',       hint:'Fora da rotina: estudo extra, feriado, webinar, leitura avulsa. Dê um nome opcional.'}
 };
-const BLOCKS = ['Manhã','Almoço','Noite','Sábado','Revisão','Simulado','Outros'];
+const BLOCKS = ['Manhã','Almoço','Noite','Sábado','Domingo','Revisão','Simulado','Outros'];
 // Blocos fixos da rotina; qualquer outro nome (inclusive os antigos, como "Bloco A") é tratado como "Outros"
 function isStdBlock(b){return BLOCKS.includes(b)&&b!=='Outros'}
 function setBlockLabel(v){const t=String(v||'').trim().slice(0,30);S.form={...S.form,block:t&&!isStdBlock(t)?t:'Outros'};}
 function defaultBlock(){
   const n=new Date(),h=n.getHours();
   if(n.getDay()===6)return 'Sábado';
+  if(n.getDay()===0)return 'Domingo';
   if(h<10)return 'Manhã';
   if(h>=11&&h<15)return 'Almoço';
   return 'Noite';
@@ -120,8 +122,10 @@ const ERR_TYPES = ['Interpretação de enunciado','Gap de conteúdo — não sab
 const MONTHS = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
 const WEEK_DAYS = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 // Meta de horas por dia da semana (0 = domingo), espelhando a rotina do calendário.
-// Seg: noite 1h | Ter e Qui: manhã 1h + almoço 30 min + noite 1h | Qua: manhã 1h + almoço 30 min | Sáb: 3h
-const DAY_PLAN_H = {0:0, 1:1, 2:2.5, 3:1.5, 4:2.5, 5:0, 6:3};
+// Meta de 18h15 por semana até a prova (piso de 15h).
+// Seg: manhã 1h45 + noite 1h | Ter e Qui: manhã 1h45 + almoço 30 min + noite 1h | Qua: manhã 1h45 + almoço 30 min
+// Sex: manhã 1h45 | Sáb: 3h | Dom: 2h (a revisão semanal de 30 min é planejamento e não entra na conta)
+const DAY_PLAN_H = {0:2, 1:2.75, 2:3.25, 3:2.25, 4:3.25, 5:1.75, 6:3};
 const WEEKLY_TARGET_H = Object.values(DAY_PLAN_H).reduce((a,b)=>a+b,0);
 function dayTarget(iso){return DAY_PLAN_H[new Date(iso+'T12:00:00').getDay()]||0}
 function fmtH(h){return String(+h.toFixed(1)).replace('.',',')}
