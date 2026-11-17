@@ -1,5 +1,5 @@
 // Study Tracker PWA: Service Worker v5
-const VERSION    = 'st-v10-neon-calmo';
+const VERSION    = 'st-v11-sql';
 const CACHE_NAME = 'study-tracker-' + VERSION;
 const APP_FILES  = [
   './',

@@ -1211,10 +1211,11 @@ create table if not exists sessions (
   saved_at timestamptz default now()
 );
 alter table sessions enable row level security;
+drop policy if exists "anon_all" on sessions;
 create policy "anon_all" on sessions
   for all to anon using (true) with check (true);
 
--- Trilha de estudo (marcações sincronizadas):
+-- Trilha de estudo (se as sessões já funcionam, rode só a partir daqui):
 ${TRAIL_SQL}`;
 
   const sbInfo={

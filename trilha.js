@@ -10,6 +10,7 @@ const TRAIL_SQL = `create table if not exists trail_progress (
   updated_ms bigint
 );
 alter table trail_progress enable row level security;
+drop policy if exists "anon_all_trail" on trail_progress;
 create policy "anon_all_trail" on trail_progress
   for all to anon using (true) with check (true);`;
 
