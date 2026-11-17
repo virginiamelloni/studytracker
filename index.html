@@ -1233,7 +1233,7 @@ ${TRAIL_SQL}`;
   </div>
   <div style="border:1px solid rgba(255,255,255,.08);background:rgba(15,6,23,.7);padding:24px;margin-bottom:20px;display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end">
     <label style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:#C7AFCF">Data da prova
-      <input type="date" value="${e(S.examDate)}" min="2026-01-01" max="2030-12-31" onchange="setExamDate(this.value);render()" style="padding:10px 12px;font-family:'Inter',system-ui,sans-serif;font-size:13px;color-scheme:dark;width:190px"></label>
+      <input type="date" value="${e(S.examDate)}" min="2026-01-01" max="2030-12-31" data-field="examDate" onchange="setExamDate(this.value)" onblur="render()" style="padding:10px 12px;font-family:'Inter',system-ui,sans-serif;font-size:13px;color-scheme:dark;width:190px"></label>
     <label style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:#C7AFCF;flex:1;min-width:220px">Nome exibido no app
       <input type="text" value="${e(S.userName)}" onchange="setUserName(this.value)" style="padding:10px 12px;font-size:13px"></label>
   </div>
